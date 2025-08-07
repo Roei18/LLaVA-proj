@@ -117,7 +117,7 @@ class TrainingArguments(transformers.TrainingArguments):
     mm_projector_lr: Optional[float] = None
     group_by_modality_length: bool = field(default=False)
 
-def get_fga(model, model_args, training_args, data_args, vision_tower):
+def get_fga(model, model_args, training_args, data_args, vision_tower, compute_dtype):
     patches_height = 2
     patches_width = 2
     full_width = patches_width * 336  
@@ -139,8 +139,8 @@ def get_fga(model, model_args, training_args, data_args, vision_tower):
         similar_modalities = [[i for i in range(2, num_of_patches + 1)]]
         sharing_factor[2] = (1, [0])
 
-        # fga = model.initialize_fga(util_e, sharing_factor, False, sizes, size_force=False, similar_modalities=similar_modalities).to(dtype=compute_dtype, device=training_args.device)
-        fga = model.initialize_fga(util_e, sharing_factor, False, sizes, size_force=False, similar_modalities=similar_modalities).to(device=training_args.device)
+        fga = model.initialize_fga(util_e, sharing_factor, False, sizes, size_force=False, similar_modalities=similar_modalities).to(dtype=compute_dtype, device=training_args.device)
+        #fga = model.initialize_fga(util_e, sharing_factor, False, sizes, size_force=False, similar_modalities=similar_modalities).to(device=training_args.device)
         model.fga = fga
         # if model_args.fga_pretrained:
         #     print(f"Loading FGA pretrained weights from {model_args.fga_pretrained}")
@@ -783,10 +783,7 @@ class LazySupervisedDataset(Dataset):
             processor = self.data_args.image_processor
             image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
             if self.data_args.image_aspect_ratio == 'anyres':
-                image, num_of_patches = mm_utils.process_anyres_image(image, 
-                                                      self.data_args.image_processor, 
-                                                      self.data_args.image_grid_pinpoints, 
-                                                      resulotion=(self.data_args.image_processor.crop_size['height'], self.data_args.image_processor.crop_size['width']))
+                image, num_of_patches = mm_utils.process_anyres_image(image, self.data_args.image_processor, self.data_args.image_grid_pinpoints)
             elif self.data_args.image_aspect_ratio == 'pad':
                 def expand2square(pil_img, background_color):
                     width, height = pil_img.size
@@ -1035,7 +1032,7 @@ def train(attn_implementation=None):
         model.initialize_vision_tokenizer(model_args, tokenizer=tokenizer)
     
     if model_args.fga:
-        get_fga(model, model_args=model_args, training_args=training_args, data_args=data_args, vision_tower=model.get_vision_tower())
+        get_fga(model, model_args=model_args, training_args=training_args, data_args=data_args, vision_tower=model.get_vision_tower(), compute_dtype=compute_dtype)
 
     if training_args.bits in [4, 8]:
         from peft.tuners.lora import LoraLayer

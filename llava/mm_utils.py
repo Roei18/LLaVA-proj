@@ -7,6 +7,93 @@ import ast
 
 from transformers import StoppingCriteria
 from llava.constants import IMAGE_TOKEN_INDEX
+import re
+
+import torch
+from collections import OrderedDict
+
+def extract_mm_projector_weights(weights, keyword='mm_projector'):
+    """
+    Robustly extract mm_projector weights, whether full or already filtered.
+    
+    Args:
+        weights (dict): State dict (possibly full or filtered).
+        keyword (str): Module keyword to filter by.
+    
+    Returns:
+        dict: Cleaned state dict ready to load.
+    """
+    sample_keys = list(weights.keys())
+
+    # Case 1: already filtered, e.g., '0.weight'
+    if all(k.split('.')[0].isdigit() for k in sample_keys):
+        return weights
+
+    # Case 2: needs filtering
+    return {
+        k.split(keyword + '.')[1]: v
+        for k, v in weights.items()
+        if keyword + '.' in k
+    }
+
+import torch
+from collections import OrderedDict
+
+def _unwrap_state_dict(sd):
+    """
+    Descend through typical wrapper keys until all values are tensors.
+    """
+    while isinstance(sd, dict) and not all(isinstance(v, torch.Tensor) for v in sd.values()):
+        for key in ('state_dict', 'model', 'module'):
+            if key in sd and isinstance(sd[key], dict):
+                sd = sd[key]
+                break
+        else:
+            break
+    return sd
+
+
+from collections import OrderedDict
+import torch
+
+def separate_weights_from_bin(weight_data, module_name):
+    """
+    Extract weights for a sub-module from a checkpoint and compare to model.
+
+    Args:
+        weight_data (str | dict): Path to .bin or a loaded state dict
+        module_name (str)       : Name of submodule to extract (e.g. 'mm_projector')
+        model (torch.nn.Module) : Reference model to compare keys (optional)
+        verbose (bool)          : Print full key match diagnostics
+
+    Returns:
+        OrderedDict: {clean_key: tensor} suitable for load_state_dict()
+    """
+    # Load checkpoint
+    if isinstance(weight_data, str):
+        full_sd = torch.load(weight_data, map_location='cpu')
+    elif isinstance(weight_data, dict):
+        full_sd = weight_data
+    else:
+        raise TypeError("weight_data must be a filepath or a state-dict")
+
+    full_sd = _unwrap_state_dict(full_sd)
+
+    # Separate out weights for the requested submodule
+    filtered = OrderedDict()
+    checkpoint_keys = set()
+    for k, v in full_sd.items():
+        parts = k.split('.')
+        try:
+            idx = parts.index(module_name)
+        except ValueError:
+            continue
+        if idx == len(parts) - 1:
+            continue
+        new_key = '.'.join(parts[idx + 1:])
+        filtered[new_key] = v
+        checkpoint_keys.add(new_key)
+    return filtered
 
 
 def select_best_resolution(original_size, possible_resolutions):
@@ -52,8 +139,6 @@ def resize_and_pad_image(image, target_resolution):
     """
     original_width, original_height = image.size
     target_width, target_height = target_resolution
-    if original_width == target_width and original_height == target_height:
-        return image
 
     scale_w = target_width / original_width
     scale_h = target_height / original_height
@@ -96,8 +181,7 @@ def divide_to_patches(image, patch_size):
             patches.append(patch)
 
     return patches
-
-
+'''
 def get_anyres_image_grid_shape(image_size, grid_pinpoints, patch_size):
     """
     Calculate the shape of the image patch grid after the preprocessing for images of any resolution.
@@ -118,7 +202,7 @@ def get_anyres_image_grid_shape(image_size, grid_pinpoints, patch_size):
     return width // patch_size, height // patch_size
 
 
-def process_anyres_image(image, processor, grid_pinpoints, resulotion=None):
+def process_anyres_image(image, processor, grid_pinpoints):
     """
     Process an image with variable resolutions.
 
@@ -129,18 +213,12 @@ def process_anyres_image(image, processor, grid_pinpoints, resulotion=None):
 
     Returns:
         torch.Tensor: A tensor containing the processed image patches.
-        int: The number of patches created from the image.
     """
-    if resulotion is not None:
-        best_resolution = resulotion
+    if type(grid_pinpoints) is list:
+        possible_resolutions = grid_pinpoints
     else:
-        # Determine the best resolution based on the image size and grid pinpoints
-        if type(grid_pinpoints) is list:
-            possible_resolutions = grid_pinpoints
-        else:
-            possible_resolutions = ast.literal_eval(grid_pinpoints)
-        best_resolution = select_best_resolution(image.size, possible_resolutions)
-
+        possible_resolutions = ast.literal_eval(grid_pinpoints)
+    best_resolution = select_best_resolution(image.size, possible_resolutions)
     image_padded = resize_and_pad_image(image, best_resolution)
 
     patches = divide_to_patches(image_padded, processor.crop_size['height'])
@@ -150,9 +228,91 @@ def process_anyres_image(image, processor, grid_pinpoints, resulotion=None):
     image_patches = [image_original_resize] + patches
     image_patches = [processor.preprocess(image_patch, return_tensors='pt')['pixel_values'][0]
                      for image_patch in image_patches]
-    num_patches = len(image_patches)
-    return torch.stack(image_patches, dim=0), num_patches
+    return torch.stack(image_patches, dim=0)
+'''
+def get_anyres_image_grid_shape(image_size, grid_pinpoints, patch_size):
+    """
+    Calculate the shape of the image patch grid after the preprocessing for images of any resolution.
 
+    Args:
+        image_size (tuple): The size of the input image in the format (width, height).
+        grid_pinpoints (str): A string representation of a list of possible resolutions.
+        patch_size (int): The size of each image patch.
+
+    Returns:
+        tuple: The shape of the image patch grid in the format (width, height).
+    """
+    if isinstance(grid_pinpoints, str) and "x" in grid_pinpoints:
+        assert patch_size in [224, 336, 384, 448, 512], "patch_size should be in [224, 336, 384, 448, 512]"
+        # Use regex to extract the range from the input string
+        matches = re.findall(r"\((\d+)x(\d+)\)", grid_pinpoints)
+        range_start = tuple(map(int, matches[0]))
+        range_end = tuple(map(int, matches[-1]))
+        # Generate a matrix of tuples from (range_start[0], range_start[1]) to (range_end[0], range_end[1])
+        grid_pinpoints = [(i, j) for i in range(range_start[0], range_end[0] + 1) for j in range(range_start[1], range_end[1] + 1)]
+        # Multiply all elements by patch_size
+        grid_pinpoints = [[dim * patch_size for dim in pair] for pair in grid_pinpoints]
+    if type(grid_pinpoints) is list:
+        possible_resolutions = grid_pinpoints
+    else:
+        possible_resolutions = ast.literal_eval(grid_pinpoints)
+    print("possible_resolutions", possible_resolutions)
+    print("image_size", image_size)
+    width, height = select_best_resolution(image_size, possible_resolutions)
+    return width // patch_size, height // patch_size
+
+def process_anyres_image(image, processor, grid_pinpoints):
+    """
+    Process an image with variable resolutions.
+
+    Args:
+        image (PIL.Image.Image): The input image to be processed.
+        processor: The image processor object.
+        grid_pinpoints (str): A string representation of a list of possible resolutions.
+
+    Returns:
+        torch.Tensor: A tensor containing the processed image patches.
+    """
+    # Convert grid_pinpoints from string to list
+    if isinstance(grid_pinpoints, str) and "x" in grid_pinpoints:
+        try:
+            patch_size = processor.size[0]
+        except Exception as e:
+            patch_size = processor.size["shortest_edge"]
+        assert patch_size in [224, 336, 384, 448, 512], "patch_size should be in [224, 336, 384, 448, 512]"
+        # Use regex to extract the range from the input string
+        matches = re.findall(r"\((\d+)x(\d+)\)", grid_pinpoints)
+        range_start = tuple(map(int, matches[0]))
+        range_end = tuple(map(int, matches[-1]))
+        # Generate a matrix of tuples from (range_start[0], range_start[1]) to (range_end[0], range_end[1])
+        grid_pinpoints = [(i, j) for i in range(range_start[0], range_end[0] + 1) for j in range(range_start[1], range_end[1] + 1)]
+        # Multiply all elements by patch_size
+        grid_pinpoints = [[dim * patch_size for dim in pair] for pair in grid_pinpoints]
+
+    if type(grid_pinpoints) is list:
+        possible_resolutions = grid_pinpoints
+    else:
+        possible_resolutions = ast.literal_eval(grid_pinpoints)
+    best_resolution = select_best_resolution(image.size, possible_resolutions)
+    image_padded = resize_and_pad_image(image, best_resolution)
+
+    patches = divide_to_patches(image_padded, processor.crop_size["height"])
+
+    # FIXME: this seems to be a bug that it resizes instead of pad.
+    # but to keep it consistent with previous, i will keep it as it is
+    # TODO: uncomment below to ablate with the padding
+    if isinstance(processor.size, dict):
+        shortest_edge = processor.size["shortest_edge"]
+    else:
+        shortest_edge = min(processor.size)
+    image_original_resize = image.resize((shortest_edge, shortest_edge))
+    # image_padded_square = expand2square(image, tuple(int(x*255) for x in processor.image_mean))
+    # image_original_resize = image_padded_square.resize((processor.size['shortest_edge'], processor.size['shortest_edge']))
+
+    image_patches = [image_original_resize] + patches
+    image_patches = [processor.preprocess(image_patch, return_tensors="pt")["pixel_values"][0] for image_patch in image_patches]
+    num_of_patches = len(image_patches)
+    return torch.stack(image_patches, dim=0), num_of_patches
 
 def load_image_from_base64(image):
     return Image.open(BytesIO(base64.b64decode(image)))
@@ -254,3 +414,7 @@ class KeywordsStoppingCriteria(StoppingCriteria):
         for i in range(output_ids.shape[0]):
             outputs.append(self.call_for_batch(output_ids[i].unsqueeze(0), scores))
         return all(outputs)
+
+
+
+
