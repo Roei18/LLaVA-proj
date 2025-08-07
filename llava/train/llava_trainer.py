@@ -12,7 +12,6 @@ from transformers.trainer import (
     ALL_LAYERNORM_LAYERS,
     logger,
 )
-from transformers.trainer_utils import get_rng_state
 from typing import List, Optional
 
 
@@ -327,7 +326,6 @@ class LLaVATrainer(Trainer):
                 if self.use_amp:
                     torch.save(self.scaler.state_dict(), output_dir / "scaler.pt")
                 self.state.save_to_json(output_dir / "trainer_state.json")
-                torch.save(get_rng_state(), output_dir / "rng_state.pth")
                 
         else:
             super(LLaVATrainer, self)._save_checkpoint(model, trial, metrics)
