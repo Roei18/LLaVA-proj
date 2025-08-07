@@ -787,7 +787,7 @@ class LazySupervisedDataset(Dataset):
                                                       self.data_args.image_processor, 
                                                       self.data_args.image_grid_pinpoints, 
                                                       resulotion=(self.data_args.image_processor.crop_size['height'], self.data_args.image_processor.crop_size['width']))
-            if self.data_args.image_aspect_ratio == 'pad':
+            elif self.data_args.image_aspect_ratio == 'pad':
                 def expand2square(pil_img, background_color):
                     width, height = pil_img.size
                     if width == height:
