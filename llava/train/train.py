@@ -1035,7 +1035,7 @@ def train(attn_implementation=None):
         model.initialize_vision_tokenizer(model_args, tokenizer=tokenizer)
     
     if model_args.fga:
-        get_fga()
+        get_fga(model, model_args=model_args, training_args=training_args, data_args=data_args, vision_tower=model.get_vision_tower())
 
     if training_args.bits in [4, 8]:
         from peft.tuners.lora import LoraLayer
