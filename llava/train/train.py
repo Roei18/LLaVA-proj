@@ -37,6 +37,8 @@ from llava.mm_utils import tokenizer_image_token
 
 from PIL import Image
 
+import llava.mm_utils as mm_utils
+
 
 local_rank = None
 
@@ -64,6 +66,9 @@ class ModelArguments:
     mm_use_im_patch_token: bool = field(default=True)
     mm_patch_merge_type: Optional[str] = field(default='flat')
     mm_vision_select_feature: Optional[str] = field(default="patch")
+    fga: Optional[bool] = field(default=False, metadata={
+        "help": "Use FGA (Factor Graph Attention) for multimodal projector."
+    })
 
 
 @dataclass
@@ -111,6 +116,83 @@ class TrainingArguments(transformers.TrainingArguments):
     mm_projector_lr: Optional[float] = None
     group_by_modality_length: bool = field(default=False)
 
+def get_fga(model, model_args, training_args, data_args, vision_tower):
+    patches_height = 2
+    patches_width = 2
+    full_width = patches_width * 336  
+    full_height = patches_height * 336  
+    grid_pinpoints = [[full_width, full_height]]  # i.e., [[1344, 1344]]
+    model.config.image_grid_pinpoints = data_args.image_grid_pinpoints = grid_pinpoints
+    num_of_patches = patches_height * patches_width + 1
+    if model_args.fga:
+        sizes = [None] 
+        sizes.extend([576 for _ in range(num_of_patches)])
+        text_dimension = model.config.hidden_size
+        vision_dimension = vision_tower.config.hidden_size
+        util_e = [text_dimension] + [vision_dimension for _ in range(num_of_patches)]
+        sharing_factor = {}
+
+        # First image patch - full images.
+        sharing_factor[1] = (1, [0])
+        # Following patches - image patches. Similar modalities. 
+        similar_modalities = [[i for i in range(2, num_of_patches + 1)]]
+        sharing_factor[2] = (1, [0])
+
+        # fga = model.initialize_fga(util_e, sharing_factor, False, sizes, size_force=False, similar_modalities=similar_modalities).to(dtype=compute_dtype, device=training_args.device)
+        fga = model.initialize_fga(util_e, sharing_factor, False, sizes, size_force=False, similar_modalities=similar_modalities).to(device=training_args.device)
+        model.fga = fga
+        if model_args.fga_pretrained:
+            print(f"Loading FGA pretrained weights from {model_args.fga_pretrained}")
+            # Pull FGA tensors (your helper)
+            fga_sd = mm_utils.separate_weights_from_bin(model_args.fga_pretrained, "atten")
+
+            # Load only matching keys/shapes, cast to target dtype
+            tgt = fga.state_dict()
+            ok = {k: v.to(dtype=tgt[k].dtype) for k, v in fga_sd.items()
+                if k in tgt and v.shape == tgt[k].shape}
+            info = fga.load_state_dict(ok, strict=False)
+
+            if training_args.local_rank in (-1, 0):
+                logging.info("Loaded %d/%d FGA tensors from %s. Missing: %s | Unexpected: %s",
+                            len(ok), len(tgt), model_args.fga_pretrained,
+                            info.missing_keys or "none", info.unexpected_keys or "none")
+
+            model.fga_pretrained = len(ok) > 0
+
+        names = ['Text'] + ['orig_image'] + [f'Patch_{i}' for i in range(1, num_of_patches)]
+        fga.show_attention_graph(names)
+        assert any(p.requires_grad for n,p in model.named_parameters()
+            if 'atten' in n), "FGA frozen!"
+        
+
+import os, pathlib, torch
+
+def train_with_optional_resume(trainer):
+    """
+    • If a compatible checkpoint is found → resume normally.  
+    • If the checkpoint fails to load because you added / removed modules,
+      fall back to a partial load (strict=False) and keep training.  
+    • If no checkpoint exists → start fresh.
+    """
+    # locate the newest checkpoint, if any
+    ckpts = sorted(pathlib.Path(trainer.args.output_dir).glob("checkpoint-*"))
+    if not ckpts:                                             # no previous run
+        return trainer.train()
+
+    ckpt_dir = str(ckpts[-1])                                 # latest checkpoint
+    try:                                                      # 1️⃣ normal resume
+        return trainer.train(resume_from_checkpoint=ckpt_dir)
+    except (RuntimeError, ValueError) as e:                   # 2️⃣ layout changed
+        print(f"⚠️  Checkpoint '{ckpt_dir}' incompatible ({e}). "
+              "Loading what matches and continuing.")
+
+        # load state_dict safely (missing / unexpected keys are ignored)
+        ckpt_file = os.path.join(ckpt_dir, "pytorch_model.bin")
+        state_dict = torch.load(ckpt_file, map_location="cpu")
+        trainer.model.load_state_dict(state_dict, strict=False)
+
+        # now train from the partially-loaded weights
+        return trainer.train()
 
 def maybe_zero_3(param, ignore_status=False, name=None):
     from deepspeed import zero
@@ -699,6 +781,11 @@ class LazySupervisedDataset(Dataset):
             image_folder = self.data_args.image_folder
             processor = self.data_args.image_processor
             image = Image.open(os.path.join(image_folder, image_file)).convert('RGB')
+            if self.data_args.image_aspect_ratio == 'anyres':
+                image, num_of_patches = mm_utils.process_anyres_image(image, 
+                                                      self.data_args.image_processor, 
+                                                      self.data_args.image_grid_pinpoints, 
+                                                      resulotion=(self.data_args.image_processor.crop_size['height'], self.data_args.image_processor.crop_size['width']))
             if self.data_args.image_aspect_ratio == 'pad':
                 def expand2square(pil_img, background_color):
                     width, height = pil_img.size
@@ -734,8 +821,11 @@ class LazySupervisedDataset(Dataset):
             data_dict['image'] = image
         elif self.data_args.is_multimodal:
             # image does not exist in the data, but the model is multimodal
-            crop_size = self.data_args.image_processor.crop_size
-            data_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
+            if self.data_args.image_aspect_ratio == 'anyres':
+                data_dict['image'] = torch.zeros(num_of_patches, 3, crop_size['height'], crop_size['width'])
+            else:
+                crop_size = self.data_args.image_processor.crop_size
+                data_dict['image'] = torch.zeros(3, crop_size['height'], crop_size['width'])
         return data_dict
 
 
@@ -942,6 +1032,9 @@ def train(attn_implementation=None):
         training_args.use_im_start_end = model_args.mm_use_im_start_end
         model.config.mm_use_im_patch_token = model_args.mm_use_im_patch_token
         model.initialize_vision_tokenizer(model_args, tokenizer=tokenizer)
+    
+    if model_args.fga:
+        get_fga()
 
     if training_args.bits in [4, 8]:
         from peft.tuners.lora import LoraLayer
@@ -955,6 +1048,7 @@ def train(attn_implementation=None):
                 if hasattr(module, 'weight'):
                     if training_args.bf16 and module.weight.dtype == torch.float32:
                         module = module.to(torch.bfloat16)
+                        
 
     data_module = make_supervised_data_module(tokenizer=tokenizer,
                                               data_args=data_args)
@@ -964,7 +1058,7 @@ def train(attn_implementation=None):
                     **data_module)
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
-        trainer.train(resume_from_checkpoint=True)
+        train_with_optional_resume(trainer)
     else:
         trainer.train()
     trainer.save_state()

@@ -12,6 +12,7 @@ from transformers.trainer import (
     ALL_LAYERNORM_LAYERS,
     logger,
 )
+from transformers.trainer_utils import get_rng_state
 from typing import List, Optional
 
 
@@ -146,7 +147,68 @@ class LLaVATrainer(Trainer):
             )
         else:
             return super()._get_train_sampler()
+        
+    def show_predictions_against_ground_truth(self, model, inputs, max_examples=3):
+        """
+        Show decoded predictions vs. ground truth using the tokenizer.
+        Handles sequence outputs.
+        """
+        model_was_training = model.training
+        model.eval()
 
+        inputs = self._prepare_inputs(inputs)
+        with torch.no_grad():
+            outputs = model(**inputs)
+            logits = outputs.logits
+
+            # Get predicted token IDs
+            predictions = torch.argmax(logits, dim=-1)
+
+        labels = inputs.get("labels", None)
+
+        for i in range(min(max_examples, predictions.size(0))):
+            pred_ids = predictions[i]
+            pred_text = self.tokenizer.decode(pred_ids, skip_special_tokens=True)
+
+            label_text = None
+            if labels is not None:
+                label_ids = labels[i]
+                label_ids = label_ids[label_ids != -100]
+                label_text = self.tokenizer.decode(label_ids, skip_special_tokens=True)
+
+            print(f"\n🔹 Sample {i}")
+            print(f"🧠 Prediction: {pred_text}")
+            if label_text is not None:
+                print(f"✅ Ground Truth: {label_text}")
+
+        if model_was_training:
+            model.train()
+
+
+    def training_step(self, model, inputs):
+        model.train()
+        inputs = self._prepare_inputs(inputs)
+
+        with self.compute_loss_context_manager():
+            loss = self.compute_loss(model, inputs)
+
+        if self.args.gradient_accumulation_steps > 1:
+            loss = loss / self.args.gradient_accumulation_steps
+
+        self.accelerator.backward(loss)
+
+        # 🔍 Log gradient norms
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                grad_norm = param.grad.data.norm(2).item()
+                print(f"{name}: {grad_norm:.6f}")
+
+        # 🔁 Every 100 steps: show predictions vs ground truth
+        if self.state.global_step % 100 == 0:
+            print(f"\n📊 Step {self.state.global_step} - Predictions vs Ground Truth:")
+            self.show_predictions_against_ground_truth(model, inputs)
+
+        return loss.detach()   
     def create_optimizer(self):
         """
         Setup the optimizer.
@@ -164,6 +226,7 @@ class LLaVATrainer(Trainer):
             decay_parameters = [name for name in decay_parameters if "bias" not in name]
             if self.args.mm_projector_lr is not None:
                 projector_parameters = [name for name, _ in opt_model.named_parameters() if "mm_projector" in name]
+                atten_paramerters = [name for name, _ in opt_model.named_parameters() if "atten" in name] if hasattr(opt_model, "fga") else []
                 optimizer_grouped_parameters = [
                     {
                         "params": [
@@ -174,6 +237,18 @@ class LLaVATrainer(Trainer):
                     {
                         "params": [
                             p for n, p in opt_model.named_parameters() if (n not in decay_parameters and n not in projector_parameters and p.requires_grad)
+                        ],
+                        "weight_decay": 0.0,
+                    },
+                    {
+                        "params": [
+                            p for n, p in opt_model.named_parameters() if (n in decay_parameters and n not in atten_paramerters and p.requires_grad)
+                        ],
+                        "weight_decay": self.args.weight_decay,
+                    },
+                    {
+                        "params": [
+                            p for n, p in opt_model.named_parameters() if (n not in decay_parameters and n not in atten_paramerters and p.requires_grad)
                         ],
                         "weight_decay": 0.0,
                     },
@@ -239,12 +314,21 @@ class LLaVATrainer(Trainer):
             keys_to_match = ['mm_projector', 'vision_resampler']
             if getattr(self.args, "use_im_start_end", False):
                 keys_to_match.extend(['embed_tokens', 'embed_in'])
+            if hasattr(self.model, "fga"):
+                keys_to_match.append('atten')
 
             weight_to_save = get_mm_adapter_state_maybe_zero_3(self.model.named_parameters(), keys_to_match)
 
             if self.args.local_rank == 0 or self.args.local_rank == -1:
                 self.model.config.save_pretrained(output_dir)
                 torch.save(weight_to_save, os.path.join(output_dir, f'mm_projector.bin'))
+                torch.save(self.optimizer.state_dict(),  output_dir / "optimizer.pt")
+                torch.save(self.lr_scheduler.state_dict(), output_dir / "scheduler.pt")
+                if self.use_amp:
+                    torch.save(self.scaler.state_dict(), output_dir / "scaler.pt")
+                self.state.save_to_json(output_dir / "trainer_state.json")
+                torch.save(get_rng_state(), output_dir / "rng_state.pth")
+                
         else:
             super(LLaVATrainer, self)._save_checkpoint(model, trial, metrics)
 

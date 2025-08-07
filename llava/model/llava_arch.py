@@ -24,6 +24,7 @@ from .multimodal_projector.builder import build_vision_projector
 from llava.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 from llava.mm_utils import get_anyres_image_grid_shape
+from .multimodal_projector.attn import Atten
 
 
 class LlavaMetaModel:
@@ -141,6 +142,73 @@ class LlavaMetaForCausalLM(ABC):
         image_features = self.get_model().get_vision_tower()(images)
         image_features = self.get_model().mm_projector(image_features)
         return image_features
+    
+    def encode_images_no_projection(self, images):
+        image_features = self.get_model().get_vision_tower()(images)
+        return image_features
+
+    def initialize_fga(self, util_e, sharing_factor,prior_flag, sizes, size_force, similar_modalities=[], skip_modalities=[]):
+        self.atten = Atten(util_e, sharing_factor, prior_flag, sizes, size_force, similar_modalities=similar_modalities, skip_modalities=skip_modalities)
+        return self.atten
+    
+    def get_patches_features(self, images, num_patches_per_image):
+        if not (type(images) is list or images.ndim == 5):
+            raise NotImplementedError("llava_acrh:get_patches_features - Only support list of images or 5D tensor for now.")
+        # (b, n+1, c, w, h)
+        if type(images) is list:
+            images = [x.unsqueeze(0) if x.ndim == 3 else x for x in images]
+        concat_images = torch.cat([image for image in images], dim=0)
+        # (b*(n+1), c, w, h)
+        image_features = self.encode_images_no_projection(concat_images)
+        # (b*(n+1), 576, 1024)
+        
+        # (b*(n+1), 576, 1024)
+        image_features = torch.split(image_features, num_patches_per_image, dim=0)
+        # (b, n+1, 576, 1024)
+        return image_features
+
+    # def get_textual_features(self, input_ids):
+    #     new_input_embeds = []
+    #     for cur_input_ids in input_ids:
+    #         num_images = (cur_input_ids == IMAGE_TOKEN_INDEX).sum()
+    #         if num_images == 0:
+    #             cur_input_embeds = self.get_model().embed_tokens(cur_input_ids)
+    #             new_input_embeds.append(cur_input_embeds)
+    #             continue
+    #         image_token_indices = [-1] + torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0].tolist() + [cur_input_ids.shape[0]]
+    #         cur_input_ids_noim = []
+    #         for i in range(len(image_token_indices) - 1):
+    #             cur_input_ids_noim.append(cur_input_ids[image_token_indices[i]+1:image_token_indices[i+1]])
+    #         cur_input_embeds = self.get_model().embed_tokens(torch.cat(cur_input_ids_noim))
+    #         new_input_embeds.append(cur_input_embeds)
+
+    #     return new_input_embeds
+
+    def get_textual_features(self, input_ids):
+        # Collect embeddings for every sample in the batch
+        text_embeds = []
+        for ids in input_ids:
+            # Drop image tokens
+            text_only_ids = ids[ids != IMAGE_TOKEN_INDEX]
+            # Convert remaining (text) tokens to embeddings
+            text_embeds.append(self.get_model().embed_tokens(text_only_ids))
+        return text_embeds
+
+    def prepare_inputs_labels_for_attention(self, input_ids,images):
+        num_patches_per_image = [image.shape[0] for image in images]
+        X_v = self.get_patches_features(images, num_patches_per_image)
+        H_q = self.get_textual_features(input_ids)
+        # Turn (b, n+1, 576, 1024) into n+1 tensors of (b, 576, 1024)
+        X_v = torch.stack(X_v, dim=0).transpose(0, 1)
+        param_attn = [H_q] + list(X_v)
+        attended_patches = self.atten(param_attn)[1:]
+        X_v = torch.stack(attended_patches, dim=1)
+        # (b, n+1, 1024)
+        concat_X_v = torch.cat([X_v[i] for i in range(X_v.shape[0])], dim=0)
+        # (b*(n+1), 1024)
+        image_features = self.get_model().mm_projector(concat_X_v)
+        return image_features
+
 
     def prepare_inputs_labels_for_multimodal(
         self, input_ids, position_ids, attention_mask, past_key_values, labels,
@@ -149,8 +217,11 @@ class LlavaMetaForCausalLM(ABC):
         vision_tower = self.get_vision_tower()
         if vision_tower is None or images is None or input_ids.shape[1] == 1:
             return input_ids, position_ids, attention_mask, past_key_values, None, labels
-
-        if type(images) is list or images.ndim == 5:
+        
+        if hasattr(self, "atten") and self.atten is not None:
+            print("Using FGA attention for multimodal inputs.")
+            image_features = self.prepare_inputs_labels_for_attention(input_ids, images)
+        elif type(images) is list or images.ndim == 5:
             if type(images) is list:
                 images = [x.unsqueeze(0) if x.ndim == 3 else x for x in images]
             concat_images = torch.cat([image for image in images], dim=0)

@@ -52,6 +52,8 @@ def resize_and_pad_image(image, target_resolution):
     """
     original_width, original_height = image.size
     target_width, target_height = target_resolution
+    if original_width == target_width and original_height == target_height:
+        return image
 
     scale_w = target_width / original_width
     scale_h = target_height / original_height
@@ -116,7 +118,7 @@ def get_anyres_image_grid_shape(image_size, grid_pinpoints, patch_size):
     return width // patch_size, height // patch_size
 
 
-def process_anyres_image(image, processor, grid_pinpoints):
+def process_anyres_image(image, processor, grid_pinpoints, resulotion=None):
     """
     Process an image with variable resolutions.
 
@@ -127,12 +129,18 @@ def process_anyres_image(image, processor, grid_pinpoints):
 
     Returns:
         torch.Tensor: A tensor containing the processed image patches.
+        int: The number of patches created from the image.
     """
-    if type(grid_pinpoints) is list:
-        possible_resolutions = grid_pinpoints
+    if resulotion is not None:
+        best_resolution = resulotion
     else:
-        possible_resolutions = ast.literal_eval(grid_pinpoints)
-    best_resolution = select_best_resolution(image.size, possible_resolutions)
+        # Determine the best resolution based on the image size and grid pinpoints
+        if type(grid_pinpoints) is list:
+            possible_resolutions = grid_pinpoints
+        else:
+            possible_resolutions = ast.literal_eval(grid_pinpoints)
+        best_resolution = select_best_resolution(image.size, possible_resolutions)
+
     image_padded = resize_and_pad_image(image, best_resolution)
 
     patches = divide_to_patches(image_padded, processor.crop_size['height'])
@@ -142,7 +150,8 @@ def process_anyres_image(image, processor, grid_pinpoints):
     image_patches = [image_original_resize] + patches
     image_patches = [processor.preprocess(image_patch, return_tensors='pt')['pixel_values'][0]
                      for image_patch in image_patches]
-    return torch.stack(image_patches, dim=0)
+    num_patches = len(image_patches)
+    return torch.stack(image_patches, dim=0), num_patches
 
 
 def load_image_from_base64(image):
