@@ -169,7 +169,7 @@ def get_fga(model, model_args, training_args, data_args, vision_tower, compute_d
 
 import os, pathlib, torch
 
-def train_with_optional_resume(trainer, model_name = 'mm_projector.bin', disable_resume_from_checkpoint = True):
+def train_with_optional_resume(trainer, model_name = 'mm_projector.bin', disable_resume_from_checkpoint = True, dtype=torch.float32):
     """
     • If a compatible checkpoint is found → resume normally.  
     • If the checkpoint fails to load because you added / removed modules,
@@ -197,6 +197,7 @@ def train_with_optional_resume(trainer, model_name = 'mm_projector.bin', disable
     state_dict = torch.load(ckpt_file, map_location="cpu")
     trainer.model.load_state_dict(state_dict, strict=False)
     trainer.args.resume_from_checkpoint = None
+    trainer.model = trainer.model.to(dtype=dtype)
 
     # now train from the partially-loaded weights
     return trainer.train()
@@ -886,7 +887,7 @@ def train(attn_implementation=None):
         (ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     local_rank = training_args.local_rank
-    compute_dtype = (torch.float16 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
+    compute_dtype = (torch.bfloat16 if training_args.bf16 else (torch.float16 if training_args.fp16 else torch.float32))
 
     bnb_model_from_pretrained_args = {}
     if training_args.bits in [4, 8]:
@@ -1061,7 +1062,7 @@ def train(attn_implementation=None):
                     args=training_args,
                     **data_module)
 
-    train_with_optional_resume(trainer)
+    train_with_optional_resume(trainer, dtype=compute_dtype)
     trainer.save_state()
 
     model.config.use_cache = True
