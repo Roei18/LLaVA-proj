@@ -194,7 +194,7 @@ class LlavaMetaForCausalLM(ABC):
             text_embeds.append(self.get_model().embed_tokens(text_only_ids))
         return torch.stack(text_embeds)
 
-    def prepare_inputs_labels_for_attention(self, input_ids,images):
+    def prepare_inputs_labels_for_attention(self, input_ids, images):
         num_patches_per_image = [image.shape[0] for image in images]
         X_v = self.get_patches_features(images, num_patches_per_image)
         H_q = self.get_textual_features(input_ids)
@@ -207,6 +207,8 @@ class LlavaMetaForCausalLM(ABC):
         concat_X_v = torch.cat([X_v[i] for i in range(X_v.shape[0])], dim=0)
         # (b*(n+1), 1024)
         image_features = self.get_model().mm_projector(concat_X_v)
+        split_sizes = [image.shape[0] for image in images]
+        image_features = torch.split(image_features, split_sizes, dim=0)
         return image_features
 
 
