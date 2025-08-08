@@ -189,11 +189,13 @@ def train_with_optional_resume(trainer, model_name = 'mm_projector.bin'):
               "Loading what matches and continuing.")
 
         # load state_dict safely (missing / unexpected keys are ignored)
-        ckpt_file = os.path.join(ckpt_dir, "pytorch_model.bin")
         if model_name:
             ckpt_file = os.path.join(ckpt_dir, model_name)
+        else:
+            ckpt_file = os.path.join(ckpt_dir, "pytorch_model.bin")
         state_dict = torch.load(ckpt_file, map_location="cpu")
         trainer.model.load_state_dict(state_dict, strict=False)
+        trainer.args.resume_from_checkpoint = None
 
         # now train from the partially-loaded weights
         return trainer.train()
@@ -1058,10 +1060,7 @@ def train(attn_implementation=None):
                     args=training_args,
                     **data_module)
 
-    if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
-        train_with_optional_resume(trainer)
-    else:
-        trainer.train()
+    train_with_optional_resume(trainer)
     trainer.save_state()
 
     model.config.use_cache = True
