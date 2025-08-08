@@ -176,6 +176,7 @@ def train_with_optional_resume(trainer, model_name = 'mm_projector.bin', disable
       fall back to a partial load (strict=False) and keep training.  
     • If no checkpoint exists → start fresh.
     """
+    trainer.model = trainer.model.to(dtype=dtype)
     # locate the newest checkpoint, if any
     ckpts = sorted(pathlib.Path(trainer.args.output_dir).glob("checkpoint-*"))
     if not ckpts:                                             # no previous run
@@ -197,7 +198,6 @@ def train_with_optional_resume(trainer, model_name = 'mm_projector.bin', disable
     state_dict = torch.load(ckpt_file, map_location="cpu")
     trainer.model.load_state_dict(state_dict, strict=False)
     trainer.args.resume_from_checkpoint = None
-    trainer.model = trainer.model.to(dtype=dtype)
 
     # now train from the partially-loaded weights
     return trainer.train()
