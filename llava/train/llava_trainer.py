@@ -196,12 +196,6 @@ class LLaVATrainer(Trainer):
 
         self.accelerator.backward(loss)
 
-        # 🔍 Log gradient norms
-        for name, param in model.named_parameters():
-            if param.grad is not None:
-                grad_norm = param.grad.data.norm(2).item()
-                print(f"{name}: {grad_norm:.6f}")
-
         # 🔁 Every 100 steps: show predictions vs ground truth
         if self.state.global_step % 100 == 0:
             print(f"\n📊 Step {self.state.global_step} - Predictions vs Ground Truth:")
