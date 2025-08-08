@@ -305,8 +305,6 @@ class LLaVATrainer(Trainer):
                 torch.save(weight_to_save, os.path.join(output_dir, f'mm_projector.bin'))
                 torch.save(self.optimizer.state_dict(),  os.path.join(output_dir, "optimizer.pt"))
                 torch.save(self.lr_scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
-                if self.use_amp:
-                    torch.save(self.scaler.state_dict(), os.path.join(output_dir, "scaler.pt"))
                 self.state.save_to_json(os.path.join(output_dir, "trainer_state.json"))
                 
         else:
