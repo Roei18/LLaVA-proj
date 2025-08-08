@@ -169,7 +169,7 @@ def get_fga(model, model_args, training_args, data_args, vision_tower, compute_d
 
 import os, pathlib, torch
 
-def train_with_optional_resume(trainer, model_name = 'mm_projector.bin'):
+def train_with_optional_resume(trainer, model_name = 'mm_projector.bin', disable_resume_from_checkpoint = True):
     """
     • If a compatible checkpoint is found → resume normally.  
     • If the checkpoint fails to load because you added / removed modules,
@@ -181,24 +181,25 @@ def train_with_optional_resume(trainer, model_name = 'mm_projector.bin'):
     if not ckpts:                                             # no previous run
         return trainer.train()
 
-    ckpt_dir = str(ckpts[-1])                                 # latest checkpoint
-    try:                                                      # 1️⃣ normal resume
-        return trainer.train(resume_from_checkpoint=ckpt_dir)
-    except (RuntimeError, ValueError) as e:                   # 2️⃣ layout changed
-        print(f"⚠️  Checkpoint '{ckpt_dir}' incompatible ({e}). "
-              "Loading what matches and continuing.")
+    ckpt_dir = str(ckpts[-1])     
+    if not disable_resume_from_checkpoint:                            # latest checkpoint
+        try:                                                      # 1️⃣ normal resume
+            return trainer.train(resume_from_checkpoint=ckpt_dir)
+        except (RuntimeError, ValueError) as e:                   # 2️⃣ layout changed
+            print(f"⚠️  Checkpoint '{ckpt_dir}' incompatible ({e}). "
+                "Loading what matches and continuing.")
 
-        # load state_dict safely (missing / unexpected keys are ignored)
-        if model_name:
-            ckpt_file = os.path.join(ckpt_dir, model_name)
-        else:
-            ckpt_file = os.path.join(ckpt_dir, "pytorch_model.bin")
-        state_dict = torch.load(ckpt_file, map_location="cpu")
-        trainer.model.load_state_dict(state_dict, strict=False)
-        trainer.args.resume_from_checkpoint = None
+    # load state_dict safely (missing / unexpected keys are ignored)
+    if model_name:
+        ckpt_file = os.path.join(ckpt_dir, model_name)
+    else:
+        ckpt_file = os.path.join(ckpt_dir, "pytorch_model.bin")
+    state_dict = torch.load(ckpt_file, map_location="cpu")
+    trainer.model.load_state_dict(state_dict, strict=False)
+    trainer.args.resume_from_checkpoint = None
 
-        # now train from the partially-loaded weights
-        return trainer.train()
+    # now train from the partially-loaded weights
+    return trainer.train()
 
 def maybe_zero_3(param, ignore_status=False, name=None):
     from deepspeed import zero
