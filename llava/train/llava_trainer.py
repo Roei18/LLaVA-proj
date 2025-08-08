@@ -303,11 +303,11 @@ class LLaVATrainer(Trainer):
             if self.args.local_rank == 0 or self.args.local_rank == -1:
                 self.model.config.save_pretrained(output_dir)
                 torch.save(weight_to_save, os.path.join(output_dir, f'mm_projector.bin'))
-                torch.save(self.optimizer.state_dict(),  output_dir / "optimizer.pt")
-                torch.save(self.lr_scheduler.state_dict(), output_dir / "scheduler.pt")
+                torch.save(self.optimizer.state_dict(),  os.path.join(output_dir, "optimizer.pt"))
+                torch.save(self.lr_scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
                 if self.use_amp:
-                    torch.save(self.scaler.state_dict(), output_dir / "scaler.pt")
-                self.state.save_to_json(output_dir / "trainer_state.json")
+                    torch.save(self.scaler.state_dict(), os.path.join(output_dir, "scaler.pt"))
+                self.state.save_to_json(os.path.join(output_dir, "trainer_state.json"))
                 
         else:
             super(LLaVATrainer, self)._save_checkpoint(model, trial, metrics)
