@@ -169,7 +169,7 @@ def get_fga(model, model_args, training_args, data_args, vision_tower, compute_d
 
 import os, pathlib, torch
 
-def train_with_optional_resume(trainer):
+def train_with_optional_resume(trainer, model_name = 'mm_projector.bin'):
     """
     • If a compatible checkpoint is found → resume normally.  
     • If the checkpoint fails to load because you added / removed modules,
@@ -190,6 +190,8 @@ def train_with_optional_resume(trainer):
 
         # load state_dict safely (missing / unexpected keys are ignored)
         ckpt_file = os.path.join(ckpt_dir, "pytorch_model.bin")
+        if model_name:
+            ckpt_file = os.path.join(ckpt_dir, model_name)
         state_dict = torch.load(ckpt_file, map_location="cpu")
         trainer.model.load_state_dict(state_dict, strict=False)
 
