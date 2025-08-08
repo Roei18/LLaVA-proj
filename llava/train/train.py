@@ -69,6 +69,9 @@ class ModelArguments:
     fga: Optional[bool] = field(default=False, metadata={
         "help": "Use FGA (Factor Graph Attention) for multimodal projector."
     })
+    fga_pretrained: Optional[str] = field(default=None, metadata={
+        "help": "Path to the pretrained FGA model."
+    })
 
 
 @dataclass
@@ -140,25 +143,23 @@ def get_fga(model, model_args, training_args, data_args, vision_tower, compute_d
         sharing_factor[2] = (1, [0])
 
         fga = model.initialize_fga(util_e, sharing_factor, False, sizes, size_force=False, similar_modalities=similar_modalities).to(dtype=compute_dtype, device=training_args.device)
-        #fga = model.initialize_fga(util_e, sharing_factor, False, sizes, size_force=False, similar_modalities=similar_modalities).to(device=training_args.device)
         model.fga = fga
-        # if model_args.fga_pretrained:
-        #     print(f"Loading FGA pretrained weights from {model_args.fga_pretrained}")
-        #     # Pull FGA tensors (your helper)
-        #     fga_sd = mm_utils.separate_weights_from_bin(model_args.fga_pretrained, "atten")
+        if model_args.fga_pretrained:
+            print(f"Loading FGA pretrained weights from {model_args.fga_pretrained}")
+            fga_sd = mm_utils.separate_weights_from_bin(model_args.fga_pretrained, "atten")
 
-        #     # Load only matching keys/shapes, cast to target dtype
-        #     tgt = fga.state_dict()
-        #     ok = {k: v.to(dtype=tgt[k].dtype) for k, v in fga_sd.items()
-        #         if k in tgt and v.shape == tgt[k].shape}
-        #     info = fga.load_state_dict(ok, strict=False)
+            # Load only matching keys/shapes, cast to target dtype
+            tgt = fga.state_dict()
+            ok = {k: v.to(dtype=tgt[k].dtype) for k, v in fga_sd.items()
+                if k in tgt and v.shape == tgt[k].shape}
+            info = fga.load_state_dict(ok, strict=False)
 
-        #     if training_args.local_rank in (-1, 0):
-        #         logging.info("Loaded %d/%d FGA tensors from %s. Missing: %s | Unexpected: %s",
-        #                     len(ok), len(tgt), model_args.fga_pretrained,
-        #                     info.missing_keys or "none", info.unexpected_keys or "none")
+            if training_args.local_rank in (-1, 0):
+                logging.info("Loaded %d/%d FGA tensors from %s. Missing: %s | Unexpected: %s",
+                            len(ok), len(tgt), model_args.fga_pretrained,
+                            info.missing_keys or "none", info.unexpected_keys or "none")
 
-        #     model.fga_pretrained = len(ok) > 0
+            model.fga_pretrained = len(ok) > 0
 
         names = ['Text'] + ['orig_image'] + [f'Patch_{i}' for i in range(1, num_of_patches)]
         fga.show_attention_graph(names)

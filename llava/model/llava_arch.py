@@ -167,23 +167,6 @@ class LlavaMetaForCausalLM(ABC):
         # (b, n+1, 576, 1024)
         return image_features
 
-    # def get_textual_features(self, input_ids):
-    #     new_input_embeds = []
-    #     for cur_input_ids in input_ids:
-    #         num_images = (cur_input_ids == IMAGE_TOKEN_INDEX).sum()
-    #         if num_images == 0:
-    #             cur_input_embeds = self.get_model().embed_tokens(cur_input_ids)
-    #             new_input_embeds.append(cur_input_embeds)
-    #             continue
-    #         image_token_indices = [-1] + torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0].tolist() + [cur_input_ids.shape[0]]
-    #         cur_input_ids_noim = []
-    #         for i in range(len(image_token_indices) - 1):
-    #             cur_input_ids_noim.append(cur_input_ids[image_token_indices[i]+1:image_token_indices[i+1]])
-    #         cur_input_embeds = self.get_model().embed_tokens(torch.cat(cur_input_ids_noim))
-    #         new_input_embeds.append(cur_input_embeds)
-
-    #     return new_input_embeds
-
     def get_textual_features(self, input_ids):
         # Collect embeddings for every sample in the batch
         text_embeds = []
