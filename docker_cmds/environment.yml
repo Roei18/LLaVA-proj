@@ -31,4 +31,3 @@ dependencies:
       - wandb==0.15.12
       - wavedrom==2.0.3.post3
       - Pygments==2.16.1
-      - flash-attn
