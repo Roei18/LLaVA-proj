@@ -192,7 +192,7 @@ class LlavaMetaForCausalLM(ABC):
             text_only_ids = ids[ids != IMAGE_TOKEN_INDEX]
             # Convert remaining (text) tokens to embeddings
             text_embeds.append(self.get_model().embed_tokens(text_only_ids))
-        return text_embeds
+        return torch.stack(text_embeds)
 
     def prepare_inputs_labels_for_attention(self, input_ids,images):
         num_patches_per_image = [image.shape[0] for image in images]
