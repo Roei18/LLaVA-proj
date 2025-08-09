@@ -122,7 +122,8 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                     tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=True)
                 except:
                     tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
-                cfg_pretrained = AutoConfig.from_pretrained(model_path)
+                from llava.model.language_model.llava_llama import LlavaConfig
+                cfg_pretrained = LlavaConfig.from_pretrained(model_path)
                 model = LlavaLlamaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
 
             mm_projector_weights = torch.load(os.path.join(model_path, 'mm_projector.bin'), map_location='cpu')
