@@ -78,10 +78,16 @@ def create_data_loader(questions, image_folder, tokenizer, image_processor, mode
 
 def create_7b_dups(path):
     # creates a 7b duplicate to each file that has 13b in it's name in the path
-    for filename in os.listdir(path):
-        if "13b" in filename:
-            new_filename = filename.replace("13b", "7b")
-            shutil.copy(os.path.join(path, filename), os.path.join(path, new_filename))
+    # if a file, simply replace the 13b with 7b
+    if os.path.isdir(path):
+        for filename in os.listdir(path):
+            if "13b" in filename:
+                new_filename = filename.replace("13b", "7b")
+                shutil.copy(os.path.join(path, filename), os.path.join(path, new_filename))
+
+    else:
+        new_filename = path.replace("13b", "7b")
+        shutil.copy(path, new_filename)
 
     print(f"Created 7b duplicates in {path} for files with '13b' in their name.")
 
