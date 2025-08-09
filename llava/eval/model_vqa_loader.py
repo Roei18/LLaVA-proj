@@ -61,6 +61,7 @@ class CustomDataset(Dataset):
             full_height = patches_height * 336
             grid_pinpoints = [[full_width, full_height]]  # i.e., [[1344, 1344]]
             image, num_of_patches = mm_utils.process_anyres_image(image, self.image_processor, grid_pinpoints)
+            print(image.size, num_of_patches)
         else:
             image_tensor = process_images([image], self.image_processor, self.model_config)[0]
 
