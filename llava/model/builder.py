@@ -22,7 +22,7 @@ import torch
 from llava.model import *
 from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
-def get_fga(model):
+def get_fga(model, compute_dtype, device):
     patches_height = 2
     patches_width = 2
     num_of_patches = patches_height * patches_width + 1
@@ -39,7 +39,7 @@ def get_fga(model):
     similar_modalities = [[i for i in range(2, num_of_patches + 1)]]
     sharing_factor[2] = (1, [0])
 
-    fga = model.initialize_fga(util_e, sharing_factor, False, sizes, size_force=False, similar_modalities=similar_modalities).to(dtype=compute_dtype, device=training_args.device)
+    fga = model.initialize_fga(util_e, sharing_factor, False, sizes, size_force=False, similar_modalities=similar_modalities).to(dtype=compute_dtype, device=device)
     model.fga = fga
 
 def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", use_flash_attn=False, **kwargs):
@@ -64,6 +64,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
     if use_flash_attn:
         kwargs['attn_implementation'] = 'flash_attention_2'
 
+    
     if 'llava' in model_name.lower():
         # Load LLaVA model
         if 'lora' in model_name.lower() and model_base is None:
@@ -135,7 +136,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             subkeys = [part for k in mm_projector_weights.keys() for part in k.split('.')]
             if 'fga' in subkeys or 'atten' in subkeys:
                 print('Loading FGA weights...')
-                get_fga(model)
+                get_fga(model, torch.float16, 'cuda')
 
             model.load_state_dict(mm_projector_weights, strict=False)
         else:
