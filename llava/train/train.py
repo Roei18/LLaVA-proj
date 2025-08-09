@@ -141,7 +141,7 @@ class TrainingArguments(transformers.TrainingArguments):
     mm_projector_lr: Optional[float] = None
     group_by_modality_length: bool = field(default=False)
 
-def get_fga(model, model_args, training_args, data_args, vision_tower, compute_dtype):
+def get_fga(model, model_args, training_args, data_args, vision_tower, compute_dtype, fga_pretrained = None):
     patches_height = 2
     patches_width = 2
     full_width = patches_width * 336  
@@ -165,7 +165,9 @@ def get_fga(model, model_args, training_args, data_args, vision_tower, compute_d
 
         fga = model.initialize_fga(util_e, sharing_factor, False, sizes, size_force=False, similar_modalities=similar_modalities).to(dtype=compute_dtype, device=training_args.device)
         model.fga = fga
-        if model_args.fga_pretrained:
+        if model_args.fga_pretrained or fga_pretrained:
+            if not model_args.fga_pretrained:
+                model_args.fga_pretrained = fga_pretrained
             print(f"Loading FGA pretrained weights from {model_args.fga_pretrained}")
             fga_sd = mm_utils.separate_weights_from_bin(model_args.fga_pretrained, "atten")
 
