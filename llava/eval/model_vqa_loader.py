@@ -87,7 +87,7 @@ def create_7b_dups(path):
                 shutil.copy(os.path.join(path, filename), os.path.join(path, new_filename))
 
     else:
-        if '13b' in filename:
+        if '13b' in path:
             new_filename = path.replace("13b", "7b")
             os.rename(path, new_filename)
 
