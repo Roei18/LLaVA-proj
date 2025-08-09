@@ -22,6 +22,25 @@ import torch
 from llava.model import *
 from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
+def get_fga(model):
+    patches_height = 2
+    patches_width = 2
+    num_of_patches = patches_height * patches_width + 1
+    sizes = [None] 
+    sizes.extend([576 for _ in range(num_of_patches)])
+    text_dimension = model.config.hidden_size
+    vision_dimension = model.get_vision_tower().config.hidden_size
+    util_e = [text_dimension] + [vision_dimension for _ in range(num_of_patches)]
+    sharing_factor = {}
+
+    # First image patch - full images.
+    sharing_factor[1] = (1, [0])
+    # Following patches - image patches. Similar modalities. 
+    similar_modalities = [[i for i in range(2, num_of_patches + 1)]]
+    sharing_factor[2] = (1, [0])
+
+    fga = model.initialize_fga(util_e, sharing_factor, False, sizes, size_force=False, similar_modalities=similar_modalities).to(dtype=compute_dtype, device=training_args.device)
+    model.fga = fga
 
 def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", use_flash_attn=False, **kwargs):
     kwargs = {"device_map": device_map, **kwargs}
@@ -108,6 +127,8 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
 
             mm_projector_weights = torch.load(os.path.join(model_path, 'mm_projector.bin'), map_location='cpu')
             mm_projector_weights = {k: v.to(torch.float16) for k, v in mm_projector_weights.items()}
+            if 'fga' in mm_projector_weights or 'atten' in mm_projector_weights:
+                get_fga(model)
             model.load_state_dict(mm_projector_weights, strict=False)
         else:
             if 'mpt' in model_name.lower():
