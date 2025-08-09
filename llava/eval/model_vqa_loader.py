@@ -1,4 +1,5 @@
 import argparse
+import shutil
 import torch
 import os
 import json
@@ -75,6 +76,14 @@ def create_data_loader(questions, image_folder, tokenizer, image_processor, mode
     data_loader = DataLoader(dataset, batch_size=batch_size, num_workers=num_workers, shuffle=False, collate_fn=collate_fn)
     return data_loader
 
+def create_7b_dups(path):
+    # creates a 7b duplicate to each file that has 13b in it's name in the path
+    for filename in os.listdir(path):
+        if "13b" in filename:
+            new_filename = filename.replace("13b", "7b")
+            shutil.copy(os.path.join(path, filename), os.path.join(path, new_filename))
+
+    print(f"Created 7b duplicates in {path} for files with '13b' in their name.")
 
 def eval_model(args):
     # Model
@@ -82,7 +91,9 @@ def eval_model(args):
     model_path = os.path.expanduser(args.model_path)
     model_name = get_model_name_from_path(model_path)
     tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, args.model_base, model_name)
-
+    create_7b_dups(model_path)
+    create_7b_dups(args.question_file)
+    create_7b_dups(args.answers_file)
     questions = [json.loads(q) for q in open(os.path.expanduser(args.question_file), "r")]
     questions = get_chunk(questions, args.num_chunks, args.chunk_idx)
     answers_file = os.path.expanduser(args.answers_file)
