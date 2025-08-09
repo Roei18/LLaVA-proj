@@ -15,6 +15,7 @@ from torch.utils.data import Dataset, DataLoader
 
 from PIL import Image
 import math
+import llava.mm_utils as mm_utils
 
 
 def split_list(lst, n):
@@ -30,12 +31,13 @@ def get_chunk(lst, n, k):
 
 # Custom dataset class
 class CustomDataset(Dataset):
-    def __init__(self, questions, image_folder, tokenizer, image_processor, model_config):
+    def __init__(self, questions, image_folder, tokenizer, image_processor, model_config, anyres  =None):
         self.questions = questions
         self.image_folder = image_folder
         self.tokenizer = tokenizer
         self.image_processor = image_processor
         self.model_config = model_config
+        self.anyres = anyres
 
     def __getitem__(self, index):
         line = self.questions[index]
@@ -52,7 +54,15 @@ class CustomDataset(Dataset):
         prompt = conv.get_prompt()
 
         image = Image.open(os.path.join(self.image_folder, image_file)).convert('RGB')
-        image_tensor = process_images([image], self.image_processor, self.model_config)[0]
+        if self.anyres  :
+            patches_height = 2
+            patches_width = 2
+            full_width = patches_width * 336
+            full_height = patches_height * 336
+            grid_pinpoints = [[full_width, full_height]]  # i.e., [[1344, 1344]]
+            image, num_of_patches = mm_utils.process_anyres_image(image, self.image_processor, grid_pinpoints)
+        else:
+            image_tensor = process_images([image], self.image_processor, self.model_config)[0]
 
         input_ids = tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt')
 
@@ -157,6 +167,7 @@ if __name__ == "__main__":
     parser.add_argument("--top_p", type=float, default=None)
     parser.add_argument("--num_beams", type=int, default=1)
     parser.add_argument("--max_new_tokens", type=int, default=128)
+    parser.add_argument("--image_aspect_ratio", type=str, default=None)
     args = parser.parse_args()
 
     eval_model(args)
