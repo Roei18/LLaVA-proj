@@ -11,7 +11,7 @@ COPY . .
 RUN conda env create -f llava_yaml.yml
 
 # Activate conda env by default
-SHELL ["conda", "run", "-n", "my_env", "/bin/bash", "-c"]
+SHELL ["conda", "run", "-n", "llava_yaml", "/bin/bash", "-c"]
 
 # Set PYTHONPATH
 ENV PYTHONPATH="${PYTHONPATH}:/app:/app/llava"

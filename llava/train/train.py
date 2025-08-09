@@ -189,12 +189,6 @@ def get_fga(model, model_args, training_args, data_args, vision_tower, compute_d
     
 
 def train_with_optional_resume(trainer, model_name = 'mm_projector.bin', disable_resume_from_checkpoint = True, dtype=torch.float32):
-    """
-    • If a compatible checkpoint is found → resume normally.  
-    • If the checkpoint fails to load because you added / removed modules,
-      fall back to a partial load (strict=False) and keep training.  
-    • If no checkpoint exists → start fresh.
-    """
     # WA for zero3
     if _zero_stage_from_trainer_args(trainer) == 3:
         harmonize_trainable_dtypes(trainer.model, dtype)
