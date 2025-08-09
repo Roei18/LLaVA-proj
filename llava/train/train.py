@@ -38,7 +38,28 @@ from llava.mm_utils import tokenizer_image_token
 from PIL import Image
 
 import llava.mm_utils as mm_utils
+import os, json, pathlib
 
+def _zero_stage_from_trainer_args(trainer) -> int:
+    ds_cfg = getattr(trainer.args, "deepspeed", None)
+    if isinstance(ds_cfg, str) and os.path.exists(ds_cfg):
+        try:
+            with open(ds_cfg) as f:
+                cfg = json.load(f)
+            return int(cfg.get("zero_optimization", {}).get("stage", 0))
+        except Exception:
+            return 0
+    return 0
+
+def harmonize_trainable_dtypes(module: torch.nn.Module, target_dtype: torch.dtype):
+    m = getattr(module, "module", module)
+    for p in m.parameters():
+        if p.requires_grad and p.dtype != target_dtype:
+            p.data = p.data.to(target_dtype)
+    for b in m.buffers():
+        # keep buffers consistent too (layernorm weight/var, etc.)
+        if getattr(b, "is_floating_point", lambda: False)() and b.dtype != target_dtype:
+            b.data = b.data.to(target_dtype)
 
 local_rank = None
 
@@ -165,9 +186,7 @@ def get_fga(model, model_args, training_args, data_args, vision_tower, compute_d
         fga.show_attention_graph(names)
         assert any(p.requires_grad for n,p in model.named_parameters()
             if 'atten' in n), "FGA frozen!"
-        
-
-import os, pathlib, torch
+    
 
 def train_with_optional_resume(trainer, model_name = 'mm_projector.bin', disable_resume_from_checkpoint = True, dtype=torch.float32):
     """
@@ -176,7 +195,9 @@ def train_with_optional_resume(trainer, model_name = 'mm_projector.bin', disable
       fall back to a partial load (strict=False) and keep training.  
     • If no checkpoint exists → start fresh.
     """
-    trainer.model = trainer.model.to(dtype=dtype)
+    # WA for zero3
+    if _zero_stage_from_trainer_args(trainer) == 3:
+        harmonize_trainable_dtypes(trainer.model, dtype)
     # locate the newest checkpoint, if any
     ckpts = sorted(pathlib.Path(trainer.args.output_dir).glob("checkpoint-*"))
     if not ckpts:                                             # no previous run
