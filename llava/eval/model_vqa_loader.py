@@ -91,7 +91,6 @@ def eval_model(args):
     model_path = os.path.expanduser(args.model_path)
     model_name = get_model_name_from_path(model_path)
     tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, args.model_base, model_name)
-    create_7b_dups(model_path)
     create_7b_dups(args.question_file)
     create_7b_dups(args.answers_file)
     questions = [json.loads(q) for q in open(os.path.expanduser(args.question_file), "r")]
