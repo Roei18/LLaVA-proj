@@ -87,7 +87,8 @@ def create_7b_dups(path):
 
     else:
         new_filename = path.replace("13b", "7b")
-        shutil.copy(path, new_filename)
+        import os
+        os.rename(path, new_filename)
 
     print(f"Created 7b duplicates in {path} for files with '13b' in their name.")
 
