@@ -132,8 +132,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             else:
                 mm_projector_weights = torch.load(os.path.join(model_path, 'mm_projector.bin'), map_location='cpu')
             mm_projector_weights = {k: v.to(torch.float16) for k, v in mm_projector_weights.items()}
-            subkeys = [str(k).split('.') for k in mm_projector_weights.keys()]
-            print(subkeys)
+            subkeys = [part for k in mm_projector_weights.keys() for part in k.split('.')]
             if 'fga' in subkeys or 'atten' in subkeys:
                 print('Loading FGA weights...')
                 get_fga(model)
