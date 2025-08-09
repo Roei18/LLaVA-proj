@@ -126,7 +126,11 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 cfg_pretrained = LlavaConfig.from_pretrained(model_path)
                 model = LlavaLlamaForCausalLM.from_pretrained(model_base, low_cpu_mem_usage=True, config=cfg_pretrained, **kwargs)
 
-            mm_projector_weights = torch.load(os.path.join(model_path, 'mm_projector.bin'), map_location='cpu')
+            # check if in local there is an mm_projector.bin in ./checkpoints
+            if os.path.exists('./checkpoints/mm_projector.bin'):
+                mm_projector_weights = torch.load('./checkpoints/mm_projector.bin', map_location='cpu')
+            else:
+                mm_projector_weights = torch.load(os.path.join(model_path, 'mm_projector.bin'), map_location='cpu')
             mm_projector_weights = {k: v.to(torch.float16) for k, v in mm_projector_weights.items()}
             if 'fga' in mm_projector_weights or 'atten' in mm_projector_weights:
                 get_fga(model)
