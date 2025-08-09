@@ -121,7 +121,7 @@ def eval_model(args):
         args.conv_mode = args.conv_mode + '_mmtag'
         print(f'It seems that this is a plain model, but it is not using a mmtag prompt, auto switching to {args.conv_mode}.')
 
-    data_loader = create_data_loader(questions, args.image_folder, tokenizer, image_processor, model.config, anyres=args.anyres)
+    data_loader = create_data_loader(questions, args.image_folder, tokenizer, image_processor, model.config, image_aspect_ratio=args.image_aspect_ratio)
 
     for (input_ids, image_tensor, image_sizes), line in tqdm(zip(data_loader, questions), total=len(questions)):
         idx = line["question_id"]
