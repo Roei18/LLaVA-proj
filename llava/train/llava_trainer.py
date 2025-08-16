@@ -305,6 +305,7 @@ class LLaVATrainer(Trainer):
             torch.save(self.optimizer.state_dict(),  os.path.join(output_dir, "optimizer.pt"))
             torch.save(self.lr_scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
             self.state.save_to_json(os.path.join(output_dir, "trainer_state.json"))
+            super(LLaVATrainer, self)._save(output_dir)
 
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
         if getattr(self.args, 'tune_mm_mlp_adapter', False):

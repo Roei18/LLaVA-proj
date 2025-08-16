@@ -48,7 +48,6 @@ class Pairwise(nn.Module):
         self.embed_X = nn.Conv1d(embed_x_size, self.embed_size, 1)
         self.embed_Y = nn.Conv1d(embed_y_size, self.embed_size, 1)
         if x_spatial_dim is not None:
-            print(f"This is batch norm with {x_spatial_dim} x {self.y_spatial_dim} spatial dimensions")
             self.normalize_S = nn.BatchNorm1d(self.x_spatial_dim * self.y_spatial_dim, track_running_stats=False)
 
             self.margin_X = nn.Conv1d(self.y_spatial_dim, 1, 1)
