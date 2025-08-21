@@ -84,14 +84,13 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             print('Loading additional LLaVA weights...')
             if os.path.exists(os.path.join(model_path, 'non_lora_trainables.bin')):
                 non_lora_trainables = torch.load(os.path.join(model_path, 'non_lora_trainables.bin'), map_location='cpu')
-
-            keys = non_lora_trainables.keys()
-            if any(('fga' in key) or '.atten.' in key for key in keys):
-                handle_fga(model, torch.float16, 'cuda')
             elif os.path.exists(os.path.join(model_path, 'mm_projector.bin')):
                 # for the case it was saved in this name
                 non_lora_trainables = torch.load(os.path.join(model_path, 'mm_projector.bin'), map_location='cpu')
 
+            keys = non_lora_trainables.keys()
+            if any(('fga' in key) or '.atten.' in key for key in keys):
+                handle_fga(model, torch.float16, 'cuda')
             else:
                 # this is probably from HF Hub
                 from huggingface_hub import hf_hub_download
