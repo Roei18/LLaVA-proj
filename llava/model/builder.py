@@ -22,7 +22,7 @@ import torch
 from llava.model import *
 from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
-def get_fga(model, compute_dtype, device):
+def handle_fga(model, compute_dtype, device):
     patches_height = 2
     patches_width = 2
     num_of_patches = patches_height * patches_width + 1
@@ -84,6 +84,9 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             if os.path.exists(os.path.join(model_path, 'non_lora_trainables.bin')):
                 non_lora_trainables = torch.load(os.path.join(model_path, 'non_lora_trainables.bin'), map_location='cpu')
 
+            keys = non_lora_trainables.keys()
+            if any(('fga' in key) or '.atten.' in key for key in keys):
+                handle_fga(model, torch.float16, 'cuda')
             elif os.path.exists(os.path.join(model_path, 'mm_projector.bin')):
                 # for the case it was saved in this name
                 non_lora_trainables = torch.load(os.path.join(model_path, 'mm_projector.bin'), map_location='cpu')
@@ -136,7 +139,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             subkeys = [part for k in mm_projector_weights.keys() for part in k.split('.')]
             if 'fga' in subkeys or 'atten' in subkeys:
                 print('Loading FGA weights...')
-                get_fga(model, torch.float16, 'cuda')
+                handle_fga(model, torch.float16, 'cuda')
 
             model.load_state_dict(mm_projector_weights, strict=False)
         else:
