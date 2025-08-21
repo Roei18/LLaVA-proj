@@ -90,7 +90,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
 
             keys = non_lora_trainables.keys()
             if any(('fga' in key) or '.atten.' in key for key in keys):
-                handle_fga(model, torch.float16, 'cuda')
+                handle_fga(model, torch.float16, device)
             else:
                 # this is probably from HF Hub
                 from huggingface_hub import hf_hub_download
