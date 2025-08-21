@@ -150,6 +150,7 @@ def eval_model(args):
                                    "answer_id": ans_id,
                                    "model_id": model_name,
                                    "metadata": {}}) + "\n")
+        print(f"Question ID: {idx}, Prompt: {cur_prompt}, Output: {outputs}")
         # ans_file.flush()
     ans_file.close()
 
