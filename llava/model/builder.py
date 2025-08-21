@@ -47,6 +47,7 @@ def move_all_tensors_to_device(model, device):
     for param in model.parameters():
         param.data = param.data.to(device)
     print(f"Moved all model parameters to {device}")
+    model.to(device)
 def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", use_flash_attn=False, **kwargs):
     kwargs = {"device_map": device_map, **kwargs}
 
