@@ -98,15 +98,6 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                         subfolder=subfolder)
                     return torch.load(cache_file, map_location='cpu')
                 non_lora_trainables = load_from_hf(model_path, 'non_lora_trainables.bin')
-            # handle FGA case
-            to_print = True
-            for k in non_lora_trainables.keys():
-                if to_print:
-                    print('handling fga...')
-                    to_print = False
-                if 'fga' in k or 'atten' in k:
-                    print(f"Loading {k} weights...")
-                    non_lora_trainables[k] = non_lora_trainables[k].to(torch.float16)
             non_lora_trainables = {(k[11:] if k.startswith('base_model.') else k): v for k, v in non_lora_trainables.items()}
             if any(k.startswith('model.model.') for k in non_lora_trainables):
                 non_lora_trainables = {(k[6:] if k.startswith('model.') else k): v for k, v in non_lora_trainables.items()}
@@ -203,7 +194,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         if not vision_tower.is_loaded:
             # NOTE: not sure why
             # vision_tower.load_model(device_map=device_map)
-            vision_tower.load_model(device_map=device_map)
+            vision_tower.load_model()
         if device_map != 'auto':
             vision_tower.to(device=device_map, dtype=torch.float16)
         image_processor = vision_tower.image_processor
