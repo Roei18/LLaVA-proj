@@ -43,6 +43,10 @@ def handle_fga(model, compute_dtype, device):
     fga = model.initialize_fga(util_e, sharing_factor, False, sizes, size_force=False, similar_modalities=similar_modalities).to(dtype=compute_dtype, device=device)
     print(hasattr(model, "atten") and model.atten is not None)
 
+def move_all_tensors_to_device(model, device):
+    for param in model.parameters():
+        param.data = param.data.to(device)
+    print(f"Moved all model parameters to {device}")
 def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", device="cuda", use_flash_attn=False, **kwargs):
     kwargs = {"device_map": device_map, **kwargs}
 
@@ -206,5 +210,5 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         context_len = model.config.max_sequence_length
     else:
         context_len = 2048
-
+    move_all_tensors_to_device(model, device)
     return tokenizer, model, image_processor, context_len
