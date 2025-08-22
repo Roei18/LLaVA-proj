@@ -79,11 +79,8 @@ class Pairwise(nn.Module):
             print(f"flat_S shape: {flat_S.shape}")
             if X_t.size(0) == 1:
                 print("Using LayerNorm for batch size 1")
-                S = self.normalize_S_batch_size_1(flat_S).view(-1, self.x_spatial_dim * self.y_spatial_dim)
+                S = self.normalize_S_batch_size_1(flat_S).view(-1, self.x_spatial_dim, self.y_spatial_dim)
                 print(f"S shape after LayerNorm: {S.shape}")
-                # add the batch dimension
-                S = S.unsqueeze(0)
-                print(f"S shape after adding batch dimension: {S.shape}")
             else:
                 S = self.normalize_S(flat_S).view(-1, self.x_spatial_dim, self.y_spatial_dim)
             X_poten = self.margin_X(S.transpose(1, 2)).transpose(1, 2).squeeze(2)
