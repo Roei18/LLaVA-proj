@@ -40,7 +40,7 @@ def handle_fga(model, compute_dtype, device):
     similar_modalities = [[i for i in range(2, num_of_patches + 1)]]
     sharing_factor[2] = (1, [0])
 
-    fga = model.initialize_fga(util_e, sharing_factor, False, sizes, size_force=False, similar_modalities=similar_modalities).to(dtype=compute_dtype, device=device)
+    model.fga = model.initialize_fga(util_e, sharing_factor, False, sizes, size_force=False, similar_modalities=similar_modalities).to(dtype=compute_dtype, device=device)
     print(hasattr(model, "atten") and model.atten is not None)
 
 def move_all_tensors_to_device(model, device):
