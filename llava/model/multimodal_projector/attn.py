@@ -56,27 +56,38 @@ class Pairwise(nn.Module):
             self.margin_Y = nn.Conv1d(self.x_spatial_dim, 1, 1)
 
     def forward(self, X, Y=None):
+        # Adding size flow prints. Help me out here copilot!
+        print(f"X shape: {X.shape}")
         X_t = X.transpose(1, 2)
+        print(f"X_t shape: {X_t.shape}")
         Y_t = Y.transpose(1, 2) if Y is not None else X_t
 
 
         X_embed = self.embed_X(X_t)
+        print(f"X_embed shape: {X_embed.shape}")
         Y_embed = self.embed_Y(Y_t)
 
         X_norm = F.normalize(X_embed)
+        print(f"X_norm shape: {X_norm.shape}")
         Y_norm = F.normalize(Y_embed)
 
         S = X_norm.transpose(1, 2).bmm(Y_norm)
+        print(f"S shape: {S.shape}")
 
         if self.x_spatial_dim is not None:
             flat_S = S.view(-1, self.x_spatial_dim * self.y_spatial_dim)
+            print(f"flat_S shape: {flat_S.shape}")
             if X_t.size(0) == 1:
+                print("Using LayerNorm for batch size 1")
                 S = self.normalize_S_batch_size_1(flat_S).view(-1, self.x_spatial_dim * self.y_spatial_dim)
+                print(f"S shape after LayerNorm: {S.shape}")
                 # add the batch dimension
                 S = S.unsqueeze(0)
+                print(f"S shape after adding batch dimension: {S.shape}")
             else:
                 S = self.normalize_S(flat_S).view(-1, self.x_spatial_dim, self.y_spatial_dim)
             X_poten = self.margin_X(S.transpose(1, 2)).transpose(1, 2).squeeze(2)
+            print(f"X_poten shape: {X_poten.shape}")
             Y_poten = self.margin_Y(S).transpose(1, 2).squeeze(2)
         else:
             X_poten = S.mean(dim=2, keepdim=False)
