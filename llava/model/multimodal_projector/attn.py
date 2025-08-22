@@ -50,6 +50,7 @@ class Pairwise(nn.Module):
         if x_spatial_dim is not None:
             print(f"This is batch norm with {x_spatial_dim} x {self.y_spatial_dim} spatial dimensions")
             self.normalize_S = nn.BatchNorm1d(self.x_spatial_dim * self.y_spatial_dim, track_running_stats=False)
+            self.normalize_S_batch_size_1 = nn.LayerNorm([self.x_spatial_dim * self.y_spatial_dim])
 
             self.margin_X = nn.Conv1d(self.y_spatial_dim, 1, 1)
             self.margin_Y = nn.Conv1d(self.x_spatial_dim, 1, 1)
@@ -69,7 +70,10 @@ class Pairwise(nn.Module):
 
         if self.x_spatial_dim is not None:
             flat_S = S.view(-1, self.x_spatial_dim * self.y_spatial_dim)
-            S = self.normalize_S(flat_S).view(-1, self.x_spatial_dim, self.y_spatial_dim)
+            if X_t.size(0) == 1:
+                S = self.normalize_S_batch_size_1(flat_S).view(-1, self.x_spatial_dim * self.y_spatial_dim)
+            else:
+                S = self.normalize_S(flat_S).view(-1, self.x_spatial_dim, self.y_spatial_dim)
             X_poten = self.margin_X(S.transpose(1, 2)).transpose(1, 2).squeeze(2)
             Y_poten = self.margin_Y(S).transpose(1, 2).squeeze(2)
         else:
