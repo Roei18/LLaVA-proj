@@ -111,6 +111,7 @@ def eval_model(args):
     tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, args.model_base, model_name)
     model.eval()
     if hasattr(model, 'fga'):
+        print('found FGA, putting in eval mode')
         model.fga.eval()
     create_7b_dups(args.question_file)
     create_7b_dups(args.answers_file)
