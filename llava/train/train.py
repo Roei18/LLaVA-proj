@@ -1080,7 +1080,7 @@ def train(attn_implementation=None):
     if training_args.eval:
         from llava.model.builder import load_pretrained_model
         from llava.mm_utils import get_model_name_from_path
-        model_path = str(os.path.dirname(model_path))
+        model_path = str(os.path.dirname(model_args.pretrain_mm_mlp_adapter))
         model_name = 'llava-lora'
         load_pretrained_model(model_path, model_args.model_name_or_path, model_name)
         
