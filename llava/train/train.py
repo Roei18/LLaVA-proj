@@ -143,7 +143,6 @@ class TrainingArguments(transformers.TrainingArguments):
     group_by_modality_length: bool = field(default=False)
     eval: bool = False
     pretrain_lora: str = ""
-    pretrain_mm_mlp_adapter: str = ""
 
 def get_fga(model, model_args, training_args, data_args, vision_tower, compute_dtype):
     patches_height = 2
