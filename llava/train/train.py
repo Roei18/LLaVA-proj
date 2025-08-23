@@ -140,6 +140,7 @@ class TrainingArguments(transformers.TrainingArguments):
     lora_bias: str = "none"
     mm_projector_lr: Optional[float] = None
     group_by_modality_length: bool = field(default=False)
+    eval: bool = False
 
 def get_fga(model, model_args, training_args, data_args, vision_tower, compute_dtype):
     patches_height = 2
@@ -1073,6 +1074,14 @@ def train(attn_implementation=None):
 
     data_module = make_supervised_data_module(tokenizer=tokenizer,
                                               data_args=data_args)
+    
+    if training_args.eval:
+        from llava.model.builder import load_pretrained_model
+        from llava.mm_utils import get_model_name_from_path
+        model_path = training_args.pretrain_mm_mlp_adapter
+        model_name = get_model_name_from_path(model_path)
+        load_pretrained_model(model_path, training_args.model_name_or_path, model_name)
+        
     trainer = LLaVATrainer(model=model,
                     tokenizer=tokenizer,
                     args=training_args,
