@@ -39,6 +39,7 @@ from PIL import Image
 
 import llava.mm_utils as mm_utils
 import os, json, pathlib
+from llava.model import LlavaLlamaForCausalLM
 
 def _zero_stage_from_trainer_args(trainer) -> int:
     ds_cfg = getattr(trainer.args, "deepspeed", None)
