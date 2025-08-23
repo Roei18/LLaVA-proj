@@ -1082,7 +1082,7 @@ def train(attn_implementation=None):
         from llava.mm_utils import get_model_name_from_path
         model_path = model_args.pretrain_mm_mlp_adapter
         model_name = get_model_name_from_path(model_path)
-        load_pretrained_model(model_path, training_args.model_name_or_path, model_name)
+        load_pretrained_model(model_path, model_args.model_name_or_path, model_name)
         
     trainer = LLaVATrainer(model=model,
                     tokenizer=tokenizer,
