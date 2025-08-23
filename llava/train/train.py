@@ -141,6 +141,7 @@ class TrainingArguments(transformers.TrainingArguments):
     mm_projector_lr: Optional[float] = None
     group_by_modality_length: bool = field(default=False)
     eval: bool = False
+    pretrain_lora: str = ""
 
 def get_fga(model, model_args, training_args, data_args, vision_tower, compute_dtype):
     patches_height = 2
