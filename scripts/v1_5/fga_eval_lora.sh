@@ -6,7 +6,7 @@ deepspeed llava/train/train_mem.py \
     --eval True \
     --model_name_or_path lmsys/vicuna-7b-v1.5 \
     --version v1 \
-    --data_path playground/data/eval/vizwiz/llava_test.jsonl \
+    --data_path playground/data/eval/vizwiz/llava_test.json \
     --image_folder playground/data/eval/vizwiz/test \
     --vision_tower openai/clip-vit-large-patch14-336 \
     --pretrain_mm_mlp_adapter ./checkpoints/llava-v1.5-7b-lora/mm_projector.bin \
