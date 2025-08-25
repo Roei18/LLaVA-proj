@@ -111,16 +111,33 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 non_lora_trainables = {(k[6:] if k.startswith('model.') else k): v for k, v in non_lora_trainables.items()}
             incompatible = model.load_state_dict(non_lora_trainables, strict=False)
 
-            print("Missing keys:", incompatible.missing_keys)
-            print("Unexpected keys:", incompatible.unexpected_keys)
-
-
             from peft import PeftModel
             print('Loading LoRA weights...')
             model = PeftModel.from_pretrained(model, model_path)
             print('Merging LoRA weights...')
             model = model.merge_and_unload()
             print('Model is loaded...')
+            print("\n=== Final model check ===")
+            state_dict = model.state_dict()
+            # Compare against itself: nothing should be missing/unexpected
+            # But you can verify all keys are present
+            missing_keys = [k for k in model.state_dict().keys() if k not in state_dict]
+            unexpected_keys = [k for k in state_dict.keys() if k not in model.state_dict()]
+
+            if missing_keys:
+                print("⚠️ Still missing keys after LoRA:")
+                for k in missing_keys:
+                    print(f"  - {k}")
+            else:
+                print("✅ No missing keys after LoRA.")
+
+            if unexpected_keys:
+                print("⚠️ Still unexpected keys after LoRA:")
+                for k in unexpected_keys:
+                    print(f"  - {k}")
+            else:
+                print("✅ No unexpected keys after LoRA.")
+
         elif model_base is not None:
             # this may be mm projector only
             print('Loading LLaVA from base model...')
