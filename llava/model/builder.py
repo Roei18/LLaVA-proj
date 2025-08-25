@@ -22,47 +22,6 @@ import torch
 from llava.model import *
 from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
-def load_with_lora_and_report_unloaded(model, non_lora_trainables, model_path):
-    from peft import PeftModel
-    # 1) Load base weights (may miss many keys; we don't print them now)
-    incompatible = model.load_state_dict(non_lora_trainables, strict=False)
-    missing_before = list(incompatible.missing_keys)  # expected to include LLM weights in your setup
-
-    # 2) Snapshot only the params that were missing before LoRA
-    #    (so we can detect which ones LoRA actually fills/changes)
-    pre_merge_snap = {}
-    with torch.no_grad():
-        for k, p in model.named_parameters():
-            if k in missing_before:
-                pre_merge_snap[k] = p.detach().cpu().clone()
-
-    # 3) Load and merge LoRA
-    peft_model = PeftModel.from_pretrained(model, model_path)
-    model = peft_model.merge_and_unload()
-
-    # 4) Compare: which of the previously-missing keys did NOT change after merge?
-    #    These are the ones we "didn't see loaded from any model".
-    unresolved = []
-    with torch.no_grad():
-        for k, p in model.named_parameters():
-            if k in pre_merge_snap:
-                after = p.detach().cpu()
-                if torch.equal(after, pre_merge_snap[k]):
-                    unresolved.append(k)
-
-    # 5) Single concise log
-    print("\n=== Weight Coverage Report (base + LoRA) ===")
-    if unresolved:
-        print("⚠️ The following parameters were NOT loaded from any model:")
-        for k in unresolved:
-            print(f"  - {k}")
-        print(f"\nSummary: {len(unresolved)} params unresolved "
-              f"(out of {len(missing_before)} initially missing before LoRA).")
-    else:
-        print("✅ All parameters are accounted for by either the base checkpoint or the LoRA merge.")
-
-    return model
-
 def handle_fga(model, compute_dtype, device):
     print('FGA detected in model, adding...')
     patches_height = 2
@@ -137,7 +96,6 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             keys = non_lora_trainables.keys()
             if any(('fga' in key) or '.atten.' in key for key in keys):
                 handle_fga(model, torch.float16, device)
-            
             else:
                 # this is probably from HF Hub
                 from huggingface_hub import hf_hub_download
@@ -151,8 +109,6 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             non_lora_trainables = {(k[11:] if k.startswith('base_model.') else k): v for k, v in non_lora_trainables.items()}
             if any(k.startswith('model.model.') for k in non_lora_trainables):
                 non_lora_trainables = {(k[6:] if k.startswith('model.') else k): v for k, v in non_lora_trainables.items()}
-            load_with_lora_and_report_unloaded(model, non_lora_trainables, model_path)
-            return
             incompatible = model.load_state_dict(non_lora_trainables, strict=False)
 
             from peft import PeftModel
@@ -162,6 +118,41 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             model = model.merge_and_unload()
             print('Model is loaded...')
             print("=== Loading base weights (non-LoRA) ===")
+            incompatible = model.load_state_dict(non_lora_trainables, strict=False)
+
+            # Collect issues before LoRA
+            missing_before = incompatible.missing_keys
+            unexpected_before = incompatible.unexpected_keys
+
+            if missing_before:
+                print(f"⚠️ Missing before LoRA: {len(missing_before)} keys")
+            if unexpected_before:
+                print(f"⚠️ Unexpected before LoRA: {len(unexpected_before)} keys")
+
+            print("\n=== Loading & merging LoRA adapters ===")
+            model = PeftModel.from_pretrained(model, model_path)
+            model = model.merge_and_unload()
+
+            # Final check: does every parameter in the model have a value?
+            final_state = model.state_dict()
+            missing_after = [k for k, v in final_state.items() if v is None]
+
+            print("\n=== Final Weight Load Report ===")
+            if not missing_before and not unexpected_before and not missing_after:
+                print("✅ All model weights are accounted for (base + LoRA).")
+            else:
+                if missing_before:
+                    print("\n⚠️ Missing before LoRA:")
+                    for k in missing_before:
+                        print(f"  - {k}")
+                if unexpected_before:
+                    print("\n⚠️ Unexpected before LoRA:")
+                    for k in unexpected_before:
+                        print(f"  - {k}")
+                if missing_after:
+                    print("\n⚠️ Still missing after LoRA merge:")
+                    for k in missing_after:
+                        print(f"  - {k}")
 
         elif model_base is not None:
             # this may be mm projector only
@@ -193,7 +184,6 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 handle_fga(model, torch.float16, 'cuda')
 
             model.load_state_dict(mm_projector_weights, strict=False)
-
         else:
             if 'mpt' in model_name.lower():
                 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
