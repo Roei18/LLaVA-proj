@@ -72,12 +72,44 @@ class CustomDataset(Dataset):
         return len(self.questions)
 
 
-def collate_fn(batch):
-    input_ids, image_tensors, image_sizes = zip(*batch)
-    input_ids = torch.stack(input_ids, dim=0)
-    image_tensors = torch.stack(image_tensors, dim=0)
-    return input_ids, image_tensors, image_sizes
+# def collate_fn(batch):
+#     input_ids, image_tensors, image_sizes = zip(*batch)
+#     input_ids = torch.stack(input_ids, dim=0)
+#     image_tensors = torch.stack(image_tensors, dim=0)
+#     return input_ids, image_tensors, image_sizes
 
+import torch
+from torch.nn.utils.rnn import pad_sequence
+
+def collate_fn(batch, pad_token_id=0):
+    """
+    Collate function for batches containing variable-length input_ids
+    plus image tensors and image sizes.
+
+    Args:
+        batch: list of (input_ids, image_tensor, image_size)
+        pad_token_id: int, the padding value for input_ids
+
+    Returns:
+        input_ids_padded: (B, T) tensor
+        attention_mask:   (B, T) tensor (1 = real token, 0 = padding)
+        image_tensors:    (B, ...) stacked tensor
+        image_sizes:      list of image sizes
+    """
+    input_ids, image_tensors, image_sizes = zip(*batch)
+
+    # Pad input_ids to max length in this batch
+    input_ids_padded = pad_sequence(
+        input_ids, batch_first=True, padding_value=pad_token_id
+    )
+
+    # Build attention mask (1 where not padding)
+    attention_mask = (input_ids_padded != pad_token_id).long()
+
+    # Stack images (assumes same size within batch; else you'd need resize/collate separately)
+    image_tensors = torch.stack(image_tensors, dim=0)
+
+    return input_ids_padded, attention_mask, image_tensors, image_sizes
 
 # DataLoader
 def create_data_loader(questions, image_folder, tokenizer, image_processor, model_config, batch_size=1, num_workers=4, image_aspect_ratio=None):
@@ -121,7 +153,7 @@ def eval_model(args):
         args.conv_mode = args.conv_mode + '_mmtag'
         print(f'It seems that this is a plain model, but it is not using a mmtag prompt, auto switching to {args.conv_mode}.')
 
-    data_loader = create_data_loader(questions, args.image_folder, tokenizer, image_processor, model.config, batch_size=1, image_aspect_ratio=args.image_aspect_ratio)
+    data_loader = create_data_loader(questions, args.image_folder, tokenizer, image_processor, model.config, batch_size=2, image_aspect_ratio=args.image_aspect_ratio)
 
     for (input_ids, image_tensor, image_sizes), line in tqdm(zip(data_loader, questions), total=len(questions)):
         idx = line["question_id"]
