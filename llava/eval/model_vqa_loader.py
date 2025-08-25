@@ -154,36 +154,53 @@ def eval_model(args):
         print(f'It seems that this is a plain model, but it is not using a mmtag prompt, auto switching to {args.conv_mode}.')
 
     data_loader = create_data_loader(questions, args.image_folder, tokenizer, image_processor, model.config, batch_size=2, image_aspect_ratio=args.image_aspect_ratio)
+    q_ptr = 0
+    for (input_ids, attention_mask, image_tensors, image_sizes) in tqdm(data_loader, total=len(data_loader)):
+        batch_size = input_ids.size(0)
+        batch_questions = questions[q_ptr : q_ptr + batch_size]
+        q_ptr += batch_size
 
-    for (input_ids, image_tensor, image_sizes), line in tqdm(zip(data_loader, questions), total=len(questions)):
-        idx = line["question_id"]
-        cur_prompt = line["text"]
-
-        input_ids = input_ids.to(device='cuda', non_blocking=True)
+        # move to device
+        input_ids = input_ids.to(device="cuda", non_blocking=True)
+        attention_mask = attention_mask.to(device="cuda", non_blocking=True)
+        image_tensors = image_tensors.to(device="cuda", dtype=torch.float16, non_blocking=True)
 
         with torch.inference_mode():
             output_ids = model.generate(
-                input_ids,
-                images=image_tensor.to(dtype=torch.float16, device='cuda', non_blocking=True),
+                input_ids=input_ids,
+                attention_mask=attention_mask,              # <- now provided
+                images=image_tensors,
                 image_sizes=image_sizes,
-                do_sample=True if args.temperature > 0 else False,
+                do_sample=(args.temperature > 0),
                 temperature=args.temperature,
                 top_p=args.top_p,
                 num_beams=args.num_beams,
                 max_new_tokens=args.max_new_tokens,
-                use_cache=True)
+                use_cache=True,
+                # pad_token_id=tokenizer.pad_token_id,      # (uncomment if your model needs it)
+                # eos_token_id=tokenizer.eos_token_id,      # (optional)
+            )
 
-        outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
+        decoded = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+        decoded = [s.strip() for s in decoded]
 
-        ans_id = shortuuid.uuid()
-        ans_file.write(json.dumps({"question_id": idx,
-                                   "prompt": cur_prompt,
-                                   "text": outputs,
-                                   "answer_id": ans_id,
-                                   "model_id": model_name,
-                                   "metadata": {}}) + "\n")
-        print(f"Question ID: {idx}, Prompt: {cur_prompt}, Output: {outputs}")
-        # ans_file.flush()
+        # write one line per item in the batch
+        for i in range(batch_size):
+            idx = batch_questions[i]["question_id"]
+            cur_prompt = batch_questions[i]["text"]
+            ans_id = shortuuid.uuid()
+
+            record = {
+                "question_id": idx,
+                "prompt": cur_prompt,
+                "text": decoded[i],
+                "answer_id": ans_id,
+                "model_id": model_name,
+                "metadata": {}
+            }
+            ans_file.write(json.dumps(record) + "\n")
+            print(f"Question ID: {idx}, Prompt: {cur_prompt}, Output: {decoded[i]}")
+
     ans_file.close()
 
 if __name__ == "__main__":
