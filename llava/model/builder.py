@@ -117,26 +117,42 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             print('Merging LoRA weights...')
             model = model.merge_and_unload()
             print('Model is loaded...')
-            print("\n=== Final model check ===")
-            state_dict = model.state_dict()
-            # Compare against itself: nothing should be missing/unexpected
-            # But you can verify all keys are present
-            missing_keys = [k for k in model.state_dict().keys() if k not in state_dict]
-            unexpected_keys = [k for k in state_dict.keys() if k not in model.state_dict()]
+            print("=== Loading base weights (non-LoRA) ===")
+            incompatible = model.load_state_dict(non_lora_trainables, strict=False)
 
-            if missing_keys:
-                print("⚠️ Still missing keys after LoRA:")
-                for k in missing_keys:
-                    print(f"  - {k}")
-            else:
-                print("✅ No missing keys after LoRA.")
+            # Collect issues before LoRA
+            missing_before = incompatible.missing_keys
+            unexpected_before = incompatible.unexpected_keys
 
-            if unexpected_keys:
-                print("⚠️ Still unexpected keys after LoRA:")
-                for k in unexpected_keys:
-                    print(f"  - {k}")
+            if missing_before:
+                print(f"⚠️ Missing before LoRA: {len(missing_before)} keys")
+            if unexpected_before:
+                print(f"⚠️ Unexpected before LoRA: {len(unexpected_before)} keys")
+
+            print("\n=== Loading & merging LoRA adapters ===")
+            model = PeftModel.from_pretrained(model, model_path)
+            model = model.merge_and_unload()
+
+            # Final check: does every parameter in the model have a value?
+            final_state = model.state_dict()
+            missing_after = [k for k, v in final_state.items() if v is None]
+
+            print("\n=== Final Weight Load Report ===")
+            if not missing_before and not unexpected_before and not missing_after:
+                print("✅ All model weights are accounted for (base + LoRA).")
             else:
-                print("✅ No unexpected keys after LoRA.")
+                if missing_before:
+                    print("\n⚠️ Missing before LoRA:")
+                    for k in missing_before:
+                        print(f"  - {k}")
+                if unexpected_before:
+                    print("\n⚠️ Unexpected before LoRA:")
+                    for k in unexpected_before:
+                        print(f"  - {k}")
+                if missing_after:
+                    print("\n⚠️ Still missing after LoRA merge:")
+                    for k in missing_after:
+                        print(f"  - {k}")
 
         elif model_base is not None:
             # this may be mm projector only
