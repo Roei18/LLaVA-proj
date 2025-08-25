@@ -94,8 +94,6 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 non_lora_trainables = torch.load(os.path.join(model_path, 'mm_projector.bin'), map_location='cpu')
 
             keys = non_lora_trainables.keys()
-            for key in keys:
-                print(key)
             if any(('fga' in key) or '.atten.' in key for key in keys):
                 handle_fga(model, torch.float16, device)
             else:
