@@ -169,7 +169,7 @@ def eval_model(args):
 
         with torch.inference_mode():
             output_ids = model.generate(
-                input_ids=input_ids,
+                input=input_ids,
                 attention_mask=attention_mask,              # <- now provided
                 images=image_tensors,
                 image_sizes=image_sizes,
