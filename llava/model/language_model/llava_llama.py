@@ -114,6 +114,7 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         if "inputs_embeds" in kwargs:
             raise NotImplementedError("`inputs_embeds` is not supported")
 
+        print("inputs", inputs)
         if images is not None:
             (
                 inputs,
