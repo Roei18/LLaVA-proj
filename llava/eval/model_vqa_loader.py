@@ -261,7 +261,7 @@ def probe_issues(model, tokenizer, data_loader):
     mask = ids.ne(0).long()
     with torch.no_grad():
         out = model.generate(
-            input_ids=ids,
+            inputs=ids,
             attention_mask=mask,
             images=dummy_img,
             image_sizes=[(W, H)],
