@@ -39,8 +39,6 @@ class CustomDataset(Dataset):
         self.model_config = model_config
         self.anyres = anyres
         self.pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0  # safe fallback
-        print(tokenizer.pad_token_id)
-        print(self.pad_id)
 
     def __getitem__(self, index):
         line = self.questions[index]
@@ -171,7 +169,7 @@ def eval_model(args):
         with torch.inference_mode():
             output_ids = model.generate(
                 inputs=input_ids,
-                attention_mask=attention_mask,              # <- now provided
+                # attention_mask=attention_mask,              # <- now provided
                 images=image_tensors,
                 image_sizes=image_sizes,
                 do_sample=(args.temperature > 0),
@@ -180,8 +178,7 @@ def eval_model(args):
                 num_beams=args.num_beams,
                 max_new_tokens=args.max_new_tokens,
                 use_cache=True,
-                pad_token_id=tokenizer.pad_token_id,      # (uncomment if your model needs it)
-                eos_token_id=tokenizer.eos_token_id,      # (optional)
+                pad_token_id=tokenizer.pad_token_id 
             )
 
         decoded = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
