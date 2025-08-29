@@ -202,8 +202,8 @@ def probe_issues(model, tokenizer, data_loader):
         print("[Batch] attention_mask: None")
     print("[Batch] image_tensors:", tuple(image_tensors.shape), image_tensors.dtype)
     print("[Batch] image_sizes (first):", image_sizes[0] if isinstance(image_sizes, (list, tuple)) else image_sizes)
-
-       # --- image placeholder presence & locations
+    IMAGE_TOKEN_INDEX = -200
+    # --- image placeholder presence & locations
     img_locs = (input_ids[0] == IMAGE_TOKEN_INDEX).nonzero(as_tuple=True)[0].tolist()
     print(f"[Prompt] IMAGE_TOKEN_INDEX={IMAGE_TOKEN_INDEX} count={len(img_locs)} at positions={img_locs[:8]}")
 
