@@ -247,38 +247,33 @@ def probe_issues(model, tokenizer, data_loader):
     print(f"[Images] mean={mean_val:.4f} std={std_val:.4f} nans={has_nans}")
 
     # --- 6) Text-only control (is the LM itself sane?)
-    try:
-        vt = model.get_vision_tower()
-        proc = vt.image_processor
-        H, W = proc.crop_size["height"], proc.crop_size["width"]
+    vt = model.get_vision_tower()
+    proc = vt.image_processor
+    H, W = proc.crop_size["height"], proc.crop_size["width"]
 
-        device = next(model.parameters()).device
-        dtype = torch.float16 if any([getattr(model, "half", None)]) or str(device).startswith("cuda") else torch.float32
+    device = next(model.parameters()).device
+    dtype = torch.float16 if any([getattr(model, "half", None)]) or str(device).startswith("cuda") else torch.float32
 
-        dummy_img = torch.zeros(1, 3, H, W, device=device, dtype=dtype)
+    dummy_img = torch.zeros(1, 3, H, W, device=device, dtype=dtype)
 
-        prompt = f"{DEFAULT_IMAGE_TOKEN}\nUser: Say 'hello' twice.\nAssistant:"
-        ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").to(device)
-        mask = ids.ne(0).long()
-        print(ids)
-        print(mask)
-        with torch.no_grad():
-            out = model.generate(
-                input_ids=ids,
-                attention_mask=mask,
-                images=dummy_img,
-                image_sizes=[(W, H)],
-                temperature=0.0,
-                max_new_tokens=10,
-                pad_token_id=tokenizer.pad_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-                use_cache=True,
-            )
+    prompt = f"{DEFAULT_IMAGE_TOKEN}\nUser: Say 'hello' twice.\nAssistant:"
+    ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").to(device)
+    mask = ids.ne(0).long()
+    with torch.no_grad():
+        out = model.generate(
+            input_ids=ids,
+            attention_mask=mask,
+            images=dummy_img,
+            image_sizes=[(W, H)],
+            temperature=0.0,
+            max_new_tokens=10,
+            pad_token_id=tokenizer.pad_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+            use_cache=True,
+        )
 
-        print("[MM control]", tokenizer.decode(out[0], skip_special_tokens=True))
-        print("[Text-only control]", tokenizer.decode(out[0], skip_special_tokens=True))
-    except Exception as e:
-        print("[Text-only control] generation failed:", repr(e))
+    print("[MM control]", tokenizer.decode(out[0], skip_special_tokens=True))
+    print("[Text-only control]", tokenizer.decode(out[0], skip_special_tokens=True))
 
     print("== Probe complete ==")
 
