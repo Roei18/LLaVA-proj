@@ -111,11 +111,13 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             if any(k.startswith('model.model.') for k in non_lora_trainables):
                 non_lora_trainables = {(k[6:] if k.startswith('model.') else k): v for k, v in non_lora_trainables.items()}
 
-            for key in non_lora_trainables:
-                print(f"  - Found additional weights: {key} with shape {non_lora_trainables[key].shape} ")
-            model_modules = {k: v for k, v in model.named_modules()}
-            for key in model_modules:
-                print(f"  - Model module: {key} ")
+            from peft import PeftModel
+            print('Loading LoRA weights...')
+            model = PeftModel.from_pretrained(model, model_path)
+            print('Merging LoRA weights...')
+            model = model.merge_and_unload()
+            print('Model is loaded...')
+            print("=== Loading base weights (non-LoRA) ===")
             incompat = model.load_state_dict(non_lora_trainables, strict=False)
             print(f"Missing keys: {len(incompat.missing_keys)}")
             print(f"Unexpected keys: {len(incompat.unexpected_keys)}")
@@ -124,32 +126,10 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             for k in incompat.unexpected_keys[:20]:
                 print("UNEXPECTED", k)
 
-
-            from peft import PeftModel
-            print('Loading LoRA weights...')
-            model = PeftModel.from_pretrained(model, model_path)
-            print('Merging LoRA weights...')
-            model = model.merge_and_unload()
-            print('Model is loaded...')
-            print("=== Loading base weights (non-LoRA) ===")
-            incompatible = model.load_state_dict(non_lora_trainables, strict=False)
-
-            # Collect issues before LoRA
-            missing_before = incompatible.missing_keys
-            unexpected_before = incompatible.unexpected_keys
-
-            if missing_before:
-                print(f"⚠️ Missing before LoRA: {len(missing_before)} keys")
-            if unexpected_before:
-                print(f"⚠️ Unexpected before LoRA: {len(unexpected_before)} keys")
-
             print("\n=== Loading & merging LoRA adapters ===")
             model = PeftModel.from_pretrained(model, model_path)
             model = model.merge_and_unload()
 
-            # Final check: does every parameter in the model have a value?
-            final_state = model.state_dict()
-            missing_after = [k for k, v in final_state.items() if v is None]
 
         elif model_base is not None:
             # this may be mm projector only
