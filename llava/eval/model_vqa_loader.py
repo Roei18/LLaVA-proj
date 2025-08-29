@@ -179,8 +179,8 @@ def eval_model(args):
                 num_beams=args.num_beams,
                 max_new_tokens=args.max_new_tokens,
                 use_cache=True,
-                # pad_token_id=tokenizer.pad_token_id,      # (uncomment if your model needs it)
-                # eos_token_id=tokenizer.eos_token_id,      # (optional)
+                pad_token_id=tokenizer.pad_token_id,      # (uncomment if your model needs it)
+                eos_token_id=tokenizer.eos_token_id,      # (optional)
             )
 
         decoded = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
