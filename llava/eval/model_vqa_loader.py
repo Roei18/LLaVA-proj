@@ -246,36 +246,109 @@ def probe_issues(model, tokenizer, data_loader):
         has_nans = torch.isnan(image_tensors).any().item()
     print(f"[Images] mean={mean_val:.4f} std={std_val:.4f} nans={has_nans}")
 
-    # --- 6) Text-only control (is the LM itself sane?)
-    vt = model.get_vision_tower()
-    proc = vt.image_processor
-    H, W = proc.crop_size["height"], proc.crop_size["width"]
+    def _device_of(m):
+        return next(m.parameters()).device
 
-    device = next(model.parameters()).device
-    dtype = torch.float16 if any([getattr(model, "half", None)]) or str(device).startswith("cuda") else torch.float32
+    device = _device_of(model)
 
-    dummy_img = torch.zeros(1, 3, H, W, device=device, dtype=dtype)
+    # Ensure pad_token exists
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
 
-    prompt = f"{DEFAULT_IMAGE_TOKEN}\nUser: Say 'hello' twice.\nAssistant:"
-    ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").to(device)
-    mask = ids.ne(0).long()
-    with torch.no_grad():
-        out = model.generate(
-            inputs=ids,
-            attention_mask=mask,
-            images=dummy_img,
-            image_sizes=[(W, H)],
-            temperature=0.0,
-            max_new_tokens=10,
-            pad_token_id=tokenizer.pad_token_id,
-            eos_token_id=tokenizer.eos_token_id,
-            use_cache=True,
-        )
+    # Build a batch of 2 text-only prompts
+    text_prompts = [
+        "You are a helpful assistant.\nUser: Say 'hello' twice.\nAssistant:",
+        "You are a helpful assistant.\nUser: Say 'pong' twice.\nAssistant:",
+    ]
+    tok = tokenizer(text_prompts, return_tensors="pt", padding=True)
+    ids = tok.input_ids.to(device)
+    mask = ids.ne(tokenizer.pad_token_id).long()
 
-    print("[MM control]", tokenizer.decode(out[0], skip_special_tokens=True))
-    print("[Text-only control]", tokenizer.decode(out[0], skip_special_tokens=True))
+    print("[Control] Trying TEXT-ONLY with batch_size=2 using inputs= ...")
+    try:
+        with torch.no_grad():
+            out = model.generate(
+                inputs=ids,                         # <-- wrapper expects 'inputs'
+                attention_mask=mask,
+                temperature=0.0,
+                num_beams=1,
+                top_p=None,
+                max_new_tokens=10,
+                pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+                use_cache=True,
+            )
+        decoded = tokenizer.batch_decode(out, skip_special_tokens=True)
+        for i, s in enumerate(decoded):
+            print(f"[Text-only control {i}]", s.strip())
+    except Exception as e:
+        print("[Control] TEXT-ONLY failed, will retry with DUMMY IMAGES. Error:", repr(e))
 
-    print("== Probe complete ==")
+        # --- Fallback: multimodal dummy batch (B=2)
+        try:
+            from llava.constants import (
+                DEFAULT_IMAGE_TOKEN, IMAGE_TOKEN_INDEX,
+                DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+            )
+        except Exception:
+            DEFAULT_IMAGE_TOKEN = "<image>"
+            IMAGE_TOKEN_INDEX = -200
+            DEFAULT_IM_START_TOKEN = "<im_start>"
+            DEFAULT_IM_END_TOKEN = "<im_end>"
+
+        # Build two prompts that include an image token (match model.config.mm_use_im_start_end)
+        use_wrap = getattr(model.config, "mm_use_im_start_end", False)
+        if use_wrap:
+            img_prefix = DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN + "\n"
+        else:
+            img_prefix = DEFAULT_IMAGE_TOKEN + "\n"
+
+        mm_prompts = [
+            img_prefix + "User: Say 'hello' twice.\nAssistant:",
+            img_prefix + "User: Say 'pong' twice.\nAssistant:",
+        ]
+
+        # Tokenize with image token support (keeps IMAGE_TOKEN_INDEX)
+        from llava.mm_utils import tokenizer_image_token
+        mm_ids = torch.stack(
+            [tokenizer_image_token(p, tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt').squeeze(0)
+            for p in mm_prompts],
+            dim=0
+        ).to(device)
+
+        mm_mask = mm_ids.ne(tokenizer.pad_token_id).long()
+
+        # Make dummy images matching the processor size
+        vt = model.get_vision_tower() if hasattr(model, "get_vision_tower") else None
+        if vt is None:
+            raise RuntimeError("Vision tower not found; cannot run multimodal control.")
+        proc = vt.image_processor
+        H, W = proc.crop_size["height"], proc.crop_size["width"]
+
+        # Use fp16 on cuda models, else fp32
+        want_half = any(p.is_cuda for p in model.parameters())
+        img_dtype = torch.float16 if want_half else torch.float32
+
+        dummy_imgs = torch.zeros(2, 3, H, W, device=device, dtype=img_dtype)
+        img_sizes = [(W, H), (W, H)]
+
+        with torch.no_grad():
+            out = model.generate(
+                inputs=mm_ids,                      # <-- wrapper expects 'inputs'
+                attention_mask=mm_mask,
+                images=dummy_imgs,
+                image_sizes=img_sizes,
+                temperature=0.0,
+                num_beams=1,
+                top_p=None,
+                max_new_tokens=10,
+                pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+                use_cache=True,
+            )
+        decoded = tokenizer.batch_decode(out, skip_special_tokens=True)
+        for i, s in enumerate(decoded):
+            print(f"[MM control {i}]", s.strip())
 
 
 
