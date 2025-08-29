@@ -138,135 +138,126 @@ def create_7b_dups(path):
 
 import torch
 
-def probe_issues(model, tokenizer, data_loader, max_new_tokens=16):
-    # ---------- 0) Vocab integrity ----------
+def probe_issues(model, tokenizer, data_loader):
+    import torch
+
+    # --- 0) Constants for image tokens (handle scope/import gracefully)
+    try:
+        from llava.constants import (
+            DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+        )
+    except Exception:
+        DEFAULT_IMAGE_TOKEN = "<image>"
+        DEFAULT_IM_START_TOKEN = "<im_start>"
+        DEFAULT_IM_END_TOKEN = "<im_end>"
+
+    # --- 1) Vocab / tokenizer alignment
     emb_in = model.get_input_embeddings().weight.shape[0]
     emb_out = model.get_output_embeddings().weight.shape[0]
     tok_v = len(tokenizer)
-    print("Vocab sizes -> emb_in:", emb_in, "emb_out:", emb_out, "tok:", tok_v)
-    assert emb_in == emb_out == tok_v, "Vocab mismatch!"
-    print("Pad/EOS/UNK ids:", tokenizer.pad_token_id, tokenizer.eos_token_id, tokenizer.unk_token_id)
-    print("Added vocab keys (head):", list(tokenizer.get_added_vocab().keys())[:10])
-
-    # Ensure pad id exists (some trainings set pad=eos/unk)
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token = tokenizer.eos_token
-        print("Pad token was None; set pad_token to eos. New pad id:", tokenizer.pad_token_id)
-
-    # ---------- 1) Take one batch ----------
-    input_ids, attention_mask, image_tensors, image_sizes = next(iter(data_loader))
-    bsz = input_ids.size(0)
-    print(f"\nBatch sizes -> input_ids: {tuple(input_ids.shape)}, mask: {tuple(attention_mask.shape)}, "
-          f"images: {tuple(getattr(image_tensors, 'shape', ('list', len(image_tensors))))}, "
-          f"image_sizes(len): {len(image_sizes)}")
-
-    # Mask sanity
-    with torch.no_grad():
-        sums = attention_mask.sum(dim=1).tolist()
-    print("Attention mask sum per row:", sums[:8], ("..." if bsz > 8 else ""))
-
-    # Peek at tokens/decoded prompt head
-    print("First 60 token ids:", input_ids[0, :60].tolist())
+    print("[Vocab] emb_in:", emb_in, "emb_out:", emb_out, "tokenizer_len:", tok_v)
+    assert emb_in == emb_out == tok_v, "Vocab mismatch between model and tokenizer!"
+    print("[Tokens] pad/eos/unk:", tokenizer.pad_token_id, tokenizer.eos_token_id, tokenizer.unk_token_id)
     try:
-        head_decoded = tokenizer.decode(input_ids[0, :256], skip_special_tokens=False)
-        print("Decoded prompt head (≤256 toks):\n", head_decoded[:400])
+        print("[Tokenizer] added vocab (head):", list(tokenizer.get_added_vocab().keys())[:10])
     except Exception as e:
-        print("Decode error:", e)
+        print("[Tokenizer] get_added_vocab() not available:", e)
 
-    # ---------- 2) Devices & dtypes ----------
-    device = getattr(model, "device", None)
-    if device is None:
-        device = next(model.parameters()).device
-    print("Model device:", device)
+    # --- 2) Grab one batch
+    batch = next(iter(data_loader))
+    # data_loader returns (input_ids, attention_mask, image_tensors, image_sizes)
+    input_ids, attn_mask, image_tensors, image_sizes = batch
 
-    input_ids = input_ids.to(device)
-    attention_mask = attention_mask.to(device)
-    # image_tensors may be a tensor or a list of tensors (anyres/sizes)
-    if isinstance(image_tensors, torch.Tensor):
-        image_tensors = image_tensors.to(device, dtype=torch.float16 if any(
-            getattr(model.config, k, False) for k in ("fp16", "bf16")) else torch.float32)
-        print("Image tensor -> dtype/device:", image_tensors.dtype, image_tensors.device,
-              "mean/std:", float(image_tensors.mean()), float(image_tensors.std()))
+    # Shapes / dtypes
+    print("[Batch] input_ids:", tuple(input_ids.shape), input_ids.dtype)
+    if attn_mask is not None:
+        print("[Batch] attention_mask:", tuple(attn_mask.shape), attn_mask.dtype,
+              "| row sums:", attn_mask.sum(dim=1).tolist())
     else:
-        # list path
-        for i, t in enumerate(image_tensors[:2]):
-            print(f"Image[{i}] shape/dtype/device:", tuple(t.shape), t.dtype, t.device)
+        print("[Batch] attention_mask: None")
+    print("[Batch] image_tensors:", tuple(image_tensors.shape), image_tensors.dtype)
+    print("[Batch] image_sizes (first):", image_sizes[0] if isinstance(image_sizes, (list, tuple)) else image_sizes)
 
-    # ---------- 3) Vision tower quick check ----------
+    # --- 3) Decode prompt to verify image tokens appear in-text
+    # (skip_special_tokens=False so we can actually *see* <image> / <im_start>/<im_end>)
+    try:
+        decoded0 = tokenizer.decode(input_ids[0].tolist(), skip_special_tokens=False)
+    except Exception:
+        decoded0 = tokenizer.batch_decode(input_ids[:1], skip_special_tokens=False)[0]
+
+    head = decoded0[:400].replace("\n", "\\n")
+    print("[Prompt head <=400 chars]", head)
+
+    has_img = (DEFAULT_IMAGE_TOKEN in decoded0)
+    has_imwrap = (DEFAULT_IM_START_TOKEN in decoded0) and (DEFAULT_IM_END_TOKEN in decoded0)
+    print(f"[Prompt] has DEFAULT_IMAGE_TOKEN={has_img} | has <im_start>/<im_end>={has_imwrap}")
+    print("[Prompt] model.config.mm_use_im_start_end:", getattr(model.config, "mm_use_im_start_end", None))
+
+    if not has_img:
+        print("!!! Prompt does not contain the image token. The model may ignore the image.")
+    if getattr(model.config, "mm_use_im_start_end", False) and not has_imwrap:
+        print("!!! Model expects <im_start>/<im_end> but prompt lacks them.")
+    if (not getattr(model.config, "mm_use_im_start_end", False)) and has_imwrap:
+        print("!!! Prompt uses <im_start>/<im_end> but model config says not to.")
+
+    # --- 4) Attention mask sanity
+    if attn_mask is not None:
+        if attn_mask.dtype not in (torch.long, torch.int64, torch.bool):
+            print("!!! attention_mask has odd dtype:", attn_mask.dtype)
+        zero_rows = (attn_mask.sum(dim=1) == 0).nonzero(as_tuple=True)[0].tolist()
+        if zero_rows:
+            print(f"!!! attention_mask has all-zeros rows at indices: {zero_rows}")
+    else:
+        print("(!) No attention_mask provided; HF will infer it from padding.")
+
+    # --- 5) Image tensor stats (quick NaN/scale check)
+    with torch.no_grad():
+        mean_val = float(image_tensors.mean())
+        std_val = float(image_tensors.std())
+        has_nans = torch.isnan(image_tensors).any().item()
+    print(f"[Images] mean={mean_val:.4f} std={std_val:.4f} nans={has_nans}")
+
+    # --- 6) Vision tower quick sanity (if available)
     vt = getattr(model, "get_vision_tower", None)
     if callable(vt):
         try:
-            vision_tower = vt()
-            print("Vision tower:", type(vision_tower))
-            if isinstance(image_tensors, torch.Tensor):
-                with torch.no_grad():
-                    feats = vision_tower(image_tensors)
-                    if isinstance(feats, (list, tuple)):
-                        feats = feats[0]
-                    if torch.is_tensor(feats):
-                        print("Vision feats:", tuple(feats.shape), feats.dtype,
-                              "NaN?", bool(torch.isnan(feats).any().item()))
+            vt_mod = vt()
+            print("[Vision] tower type:", type(vt_mod))
+            with torch.no_grad():
+                feats = vt_mod(image_tensors)
+                if isinstance(feats, (list, tuple)): feats = feats[0]
+                if isinstance(feats, dict) and "last_hidden_state" in feats:
+                    feats = feats["last_hidden_state"]
+                if torch.is_tensor(feats):
+                    print("[Vision] feats:", tuple(feats.shape), feats.dtype,
+                          "nan?", torch.isnan(feats).any().item())
+                else:
+                    print("[Vision] unexpected feature type:", type(feats))
         except Exception as e:
-            print("Vision forward exception:", repr(e))
+            print("[Vision] forward exception:", repr(e))
     else:
-        print("No get_vision_tower() found on model (may be fine).")
+        print("[Vision] get_vision_tower() not found; skipping tower probe.")
 
-    # ---------- 4) Deterministic generation (with mask) ----------
-    gen_kwargs = dict(
-        input_ids=input_ids,                       # use explicit input_ids
-        attention_mask=attention_mask,             # first A/B includes mask
-        images=image_tensors,
-        image_sizes=image_sizes,
-        temperature=0.0, top_p=None, num_beams=1,
-        max_new_tokens=max_new_tokens,
-        pad_token_id=tokenizer.pad_token_id,
-        eos_token_id=tokenizer.eos_token_id,
-        use_cache=True,
-    )
-    print("\n=== GENERATE (with attention_mask) ===")
-    try:
-        with torch.no_grad():
-            out1 = model.generate(**gen_kwargs)
-        dec1 = tokenizer.batch_decode(out1, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-        print("Decoded[0]:", (dec1[0][:400] + ("..." if len(dec1[0]) > 400 else "")))
-    except Exception as e:
-        print("Generate-with-mask exception:", repr(e))
-
-    # ---------- 5) A/B: generation WITHOUT attention_mask ----------
-    gen_kwargs_nomask = dict(gen_kwargs)
-    gen_kwargs_nomask.pop("attention_mask", None)
-    print("\n=== GENERATE (without attention_mask) ===")
-    try:
-        with torch.no_grad():
-            out2 = model.generate(**gen_kwargs_nomask)
-        dec2 = tokenizer.batch_decode(out2, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-        print("Decoded[0]:", (dec2[0][:400] + ("..." if len(dec2[0]) > 400 else "")))
-    except Exception as e:
-        print("Generate-no-mask exception:", repr(e))
-
-    # ---------- 6) Text-only control (LM health) ----------
-    print("\n=== TEXT-ONLY CONTROL ===")
+    # --- 7) Text-only control (is the LM itself sane?)
     try:
         test_prompt = "You are a helpful assistant.\nUser: Say 'hello' twice.\nAssistant:"
-        ids = tokenizer([test_prompt], return_tensors="pt", padding=True).input_ids.to(device)
-        if tokenizer.pad_token_id is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        msk = ids.ne(tokenizer.pad_token_id).long()
+        ids = tokenizer([test_prompt], return_tensors="pt", padding=True).input_ids.to(input_ids.device)
+        mask = ids.ne(tokenizer.pad_token_id).long() if tokenizer.pad_token_id is not None else None
         with torch.no_grad():
-            out_txt = model.generate(
-                input_ids=ids, attention_mask=msk,
-                temperature=0.0, top_p=None, num_beams=1,
-                max_new_tokens=12,
+            out = model.generate(
+                input_ids=ids,
+                attention_mask=mask,
+                temperature=0.0,
+                max_new_tokens=10,
                 pad_token_id=tokenizer.pad_token_id,
                 eos_token_id=tokenizer.eos_token_id,
                 use_cache=True,
             )
-        print("TEXT-ONLY decoded:", tokenizer.decode(out_txt[0], skip_special_tokens=True))
+        print("[Text-only control]", tokenizer.decode(out[0], skip_special_tokens=True))
     except Exception as e:
-        print("Text-only generate exception:", repr(e))
+        print("[Text-only control] generation failed:", repr(e))
 
-    print("\nProbe complete.")
-
+    print("== Probe complete ==")
 
 
 
