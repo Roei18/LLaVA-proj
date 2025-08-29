@@ -110,6 +110,8 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             if any(k.startswith('model.model.') for k in non_lora_trainables):
                 non_lora_trainables = {(k[6:] if k.startswith('model.') else k): v for k, v in non_lora_trainables.items()}
             incompatible = model.load_state_dict(non_lora_trainables, strict=False)
+            for key in incompatible.missing_keys:
+                print(f"⚠️ Missing key when loading LLaVA weights: {key}")
 
             from peft import PeftModel
             print('Loading LoRA weights...')
