@@ -138,6 +138,30 @@ def create_7b_dups(path):
 
 import torch
 
+def _pseudo_decode_with_images(input_ids_row, tokenizer, image_token_id=-200,
+                               image_str="<image>", im_start="<im_start>", im_end="<im_end>"):
+    """
+    Convert a row of input_ids to a readable string:
+    - Keeps normal tokens via tokenizer.convert_ids_to_tokens
+    - Replaces negative (special) ids with placeholders
+    - Joins tokens, fixing SentencePiece '▁' to spaces for readability
+    """
+    toks = []
+    for tid in input_ids_row.tolist():
+        if tid < 0:
+            # map known negative ids to readable labels
+            if tid == image_token_id:
+                toks.append(image_str)
+            else:
+                toks.append(f"<neg:{tid}>")
+        else:
+            toks.append(tokenizer.convert_ids_to_tokens(int(tid)))
+    # Make SP text readable
+    s = "".join(toks).replace("▁", " ")
+    # optional cosmetic squeeze
+    return " ".join(s.split())
+
+
 def probe_issues(model, tokenizer, data_loader):
     import torch
 
@@ -178,18 +202,23 @@ def probe_issues(model, tokenizer, data_loader):
     print("[Batch] image_tensors:", tuple(image_tensors.shape), image_tensors.dtype)
     print("[Batch] image_sizes (first):", image_sizes[0] if isinstance(image_sizes, (list, tuple)) else image_sizes)
 
-    # --- 3) Decode prompt to verify image tokens appear in-text
-    # (skip_special_tokens=False so we can actually *see* <image> / <im_start>/<im_end>)
-    try:
-        decoded0 = tokenizer.decode(input_ids[0].tolist(), skip_special_tokens=False)
-    except Exception:
-        decoded0 = tokenizer.batch_decode(input_ids[:1], skip_special_tokens=False)[0]
+       # --- image placeholder presence & locations
+    img_locs = (input_ids[0] == IMAGE_TOKEN_INDEX).nonzero(as_tuple=True)[0].tolist()
+    print(f"[Prompt] IMAGE_TOKEN_INDEX={IMAGE_TOKEN_INDEX} count={len(img_locs)} at positions={img_locs[:8]}")
 
-    head = decoded0[:400].replace("\n", "\\n")
+    # --- readable preview without calling tokenizer.decode on negatives
+    preview = _pseudo_decode_with_images(
+        input_ids[0], tokenizer,
+        image_token_id=IMAGE_TOKEN_INDEX,
+        image_str=DEFAULT_IMAGE_TOKEN,
+        im_start=DEFAULT_IM_START_TOKEN,
+        im_end=DEFAULT_IM_END_TOKEN
+    )
+    head = preview[:400].replace("\n", "\\n")
     print("[Prompt head <=400 chars]", head)
 
-    has_img = (DEFAULT_IMAGE_TOKEN in decoded0)
-    has_imwrap = (DEFAULT_IM_START_TOKEN in decoded0) and (DEFAULT_IM_END_TOKEN in decoded0)
+    has_img = (DEFAULT_IMAGE_TOKEN in preview)
+    has_imwrap = (DEFAULT_IM_START_TOKEN in preview) and (DEFAULT_IM_END_TOKEN in preview)
     print(f"[Prompt] has DEFAULT_IMAGE_TOKEN={has_img} | has <im_start>/<im_end>={has_imwrap}")
     print("[Prompt] model.config.mm_use_im_start_end:", getattr(model.config, "mm_use_im_start_end", None))
 
