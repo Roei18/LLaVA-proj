@@ -116,9 +116,14 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             model_modules = {k: v for k, v in model.named_modules()}
             for key in model_modules:
                 print(f"  - Model module: {key} ")
-            incompatible = model.load_state_dict(non_lora_trainables, strict=False)
-            for key in incompatible.missing_keys:
-                print(f"⚠️ Missing key when loading LLaVA weights: {key}")
+            incompat = model.load_state_dict(non_lora_trainables, strict=False)
+            print(f"Missing keys: {len(incompat.missing_keys)}")
+            print(f"Unexpected keys: {len(incompat.unexpected_keys)}")
+            for k in incompat.missing_keys[:20]:
+                print("MISSING   ", k)
+            for k in incompat.unexpected_keys[:20]:
+                print("UNEXPECTED", k)
+
 
             from peft import PeftModel
             print('Loading LoRA weights...')
