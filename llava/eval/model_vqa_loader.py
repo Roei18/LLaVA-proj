@@ -281,7 +281,7 @@ def eval_model(args):
 
     data_loader = create_data_loader(questions, args.image_folder, tokenizer, image_processor, model.config, batch_size=2, image_aspect_ratio=args.image_aspect_ratio)
     q_ptr = 0
-    probe_issues(model, tokenizer, data_loader, max_new_tokens=args.max_new_tokens)
+    probe_issues(model, tokenizer, data_loader)
     return
     for (input_ids, attention_mask, image_tensors, image_sizes) in tqdm(data_loader, total=len(data_loader)):
         batch_size = input_ids.size(0)
