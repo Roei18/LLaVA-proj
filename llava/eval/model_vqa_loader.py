@@ -38,6 +38,8 @@ class CustomDataset(Dataset):
         self.image_processor = image_processor
         self.model_config = model_config
         self.anyres = anyres
+        self.pad_id = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else 0  # safe fallback
+        print(self.pad_id)
 
     def __getitem__(self, index):
         line = self.questions[index]
