@@ -259,8 +259,9 @@ def probe_issues(model, tokenizer, data_loader):
 
         prompt = f"{DEFAULT_IMAGE_TOKEN}\nUser: Say 'hello' twice.\nAssistant:"
         ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").to(device)
-        mask = ids.ne(tokenizer.pad_token_id).long() if tokenizer.pad_token_id is not None else None
-
+        mask = ids.ne(0).long()
+        print(ids)
+        print(mask)
         with torch.no_grad():
             out = model.generate(
                 input_ids=ids,
