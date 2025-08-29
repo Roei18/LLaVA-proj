@@ -246,42 +246,35 @@ def probe_issues(model, tokenizer, data_loader):
         has_nans = torch.isnan(image_tensors).any().item()
     print(f"[Images] mean={mean_val:.4f} std={std_val:.4f} nans={has_nans}")
 
-    # --- 6) Vision tower quick sanity (if available)
-    vt = getattr(model, "get_vision_tower", None)
-    if callable(vt):
-        try:
-            vt_mod = vt()
-            print("[Vision] tower type:", type(vt_mod))
-            with torch.no_grad():
-                feats = vt_mod(image_tensors)
-                if isinstance(feats, (list, tuple)): feats = feats[0]
-                if isinstance(feats, dict) and "last_hidden_state" in feats:
-                    feats = feats["last_hidden_state"]
-                if torch.is_tensor(feats):
-                    print("[Vision] feats:", tuple(feats.shape), feats.dtype,
-                          "nan?", torch.isnan(feats).any().item())
-                else:
-                    print("[Vision] unexpected feature type:", type(feats))
-        except Exception as e:
-            print("[Vision] forward exception:", repr(e))
-    else:
-        print("[Vision] get_vision_tower() not found; skipping tower probe.")
-
-    # --- 7) Text-only control (is the LM itself sane?)
+    # --- 6) Text-only control (is the LM itself sane?)
     try:
-        test_prompt = "You are a helpful assistant.\nUser: Say 'hello' twice.\nAssistant:"
-        ids = tokenizer([test_prompt], return_tensors="pt", padding=True).input_ids.to(input_ids.device)
+        vt = model.get_vision_tower()
+        proc = vt.image_processor
+        H, W = proc.crop_size["height"], proc.crop_size["width"]
+
+        device = next(model.parameters()).device
+        dtype = torch.float16 if any([getattr(model, "half", None)]) or str(device).startswith("cuda") else torch.float32
+
+        dummy_img = torch.zeros(1, 3, H, W, device=device, dtype=dtype)
+
+        prompt = f"{DEFAULT_IMAGE_TOKEN}\nUser: Say 'hello' twice.\nAssistant:"
+        ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").to(device)
         mask = ids.ne(tokenizer.pad_token_id).long() if tokenizer.pad_token_id is not None else None
+
         with torch.no_grad():
             out = model.generate(
                 input_ids=ids,
                 attention_mask=mask,
+                images=dummy_img,
+                image_sizes=[(W, H)],
                 temperature=0.0,
                 max_new_tokens=10,
                 pad_token_id=tokenizer.pad_token_id,
                 eos_token_id=tokenizer.eos_token_id,
                 use_cache=True,
             )
+
+        print("[MM control]", tokenizer.decode(out[0], skip_special_tokens=True))
         print("[Text-only control]", tokenizer.decode(out[0], skip_special_tokens=True))
     except Exception as e:
         print("[Text-only control] generation failed:", repr(e))
