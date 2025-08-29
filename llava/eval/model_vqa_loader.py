@@ -16,6 +16,7 @@ from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 import math
 import llava.mm_utils as mm_utils
+from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 
 def split_list(lst, n):
