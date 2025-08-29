@@ -121,15 +121,6 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             incompat = model.load_state_dict(non_lora_trainables, strict=False)
             print(f"Missing keys: {len(incompat.missing_keys)}")
             print(f"Unexpected keys: {len(incompat.unexpected_keys)}")
-            for k in incompat.missing_keys[:20]:
-                print("MISSING   ", k)
-            for k in incompat.unexpected_keys[:20]:
-                print("UNEXPECTED", k)
-
-            print("\n=== Loading & merging LoRA adapters ===")
-            model = PeftModel.from_pretrained(model, model_path)
-            model = model.merge_and_unload()
-
 
         elif model_base is not None:
             # this may be mm projector only
