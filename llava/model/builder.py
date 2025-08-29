@@ -106,11 +106,16 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                         subfolder=subfolder)
                     return torch.load(cache_file, map_location='cpu')
                 non_lora_trainables = load_from_hf(model_path, 'non_lora_trainables.bin')
+            
             non_lora_trainables = {(k[11:] if k.startswith('base_model.') else k): v for k, v in non_lora_trainables.items()}
             if any(k.startswith('model.model.') for k in non_lora_trainables):
                 non_lora_trainables = {(k[6:] if k.startswith('model.') else k): v for k, v in non_lora_trainables.items()}
+
             for key in non_lora_trainables:
                 print(f"  - Found additional weights: {key} with shape {non_lora_trainables[key].shape} ")
+            model_modules = {k: v for k, v in model.named_modules()}
+            for key in model_modules:
+                print(f"  - Model module: {key} ")
             incompatible = model.load_state_dict(non_lora_trainables, strict=False)
             for key in incompatible.missing_keys:
                 print(f"⚠️ Missing key when loading LLaVA weights: {key}")
@@ -140,23 +145,6 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             # Final check: does every parameter in the model have a value?
             final_state = model.state_dict()
             missing_after = [k for k, v in final_state.items() if v is None]
-
-            print("\n=== Final Weight Load Report ===")
-            if not missing_before and not unexpected_before and not missing_after:
-                print("✅ All model weights are accounted for (base + LoRA).")
-            else:
-                if missing_before:
-                    print("\n⚠️ Missing before LoRA:")
-                    for k in missing_before:
-                        print(f"  - {k}")
-                if unexpected_before:
-                    print("\n⚠️ Unexpected before LoRA:")
-                    for k in unexpected_before:
-                        print(f"  - {k}")
-                if missing_after:
-                    print("\n⚠️ Still missing after LoRA merge:")
-                    for k in missing_after:
-                        print(f"  - {k}")
 
         elif model_base is not None:
             # this may be mm projector only
