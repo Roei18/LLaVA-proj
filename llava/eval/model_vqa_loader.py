@@ -278,7 +278,7 @@ def probe_issues(model, tokenizer, data_loader):
                 eos_token_id=tokenizer.eos_token_id,
                 use_cache=True,
             )
-        decoded = tokenizer.batch_decode(out, skip_special_tokens=True)
+        decoded = tokenizer.batch_decode(out, skip_special_tokens=False)
         for i, s in enumerate(decoded):
             print(f"[Text-only control {i}]", s.strip())
     except Exception as e:
