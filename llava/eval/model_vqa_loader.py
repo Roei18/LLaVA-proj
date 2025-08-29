@@ -16,7 +16,6 @@ from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 import math
 import llava.mm_utils as mm_utils
-from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 
 def split_list(lst, n):
@@ -251,7 +250,7 @@ def probe_issues(model, tokenizer, data_loader):
         return next(m.parameters()).device
 
     device = _device_of(model)
-
+    from llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
     # Ensure pad_token exists
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
