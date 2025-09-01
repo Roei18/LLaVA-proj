@@ -372,8 +372,6 @@ def eval_model(args):
 
     data_loader = create_data_loader(questions, args.image_folder, tokenizer, image_processor, model.config, batch_size=2, image_aspect_ratio=args.image_aspect_ratio)
     q_ptr = 0
-    probe_issues(model, tokenizer, data_loader)
-    return
     for (input_ids, attention_mask, image_tensors, image_sizes) in tqdm(data_loader, total=len(data_loader)):
         batch_size = input_ids.size(0)
         batch_questions = questions[q_ptr : q_ptr + batch_size]
@@ -399,6 +397,7 @@ def eval_model(args):
                 pad_token_id=tokenizer.pad_token_id 
             )
 
+        print(f'output ids: {output_ids}')
         decoded = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
         decoded = [s.strip() for s in decoded]
 
