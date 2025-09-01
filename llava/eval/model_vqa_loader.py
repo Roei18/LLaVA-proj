@@ -379,9 +379,9 @@ def eval_model(args):
         q_ptr += batch_size
 
         # move to device
-        input_ids = input_ids.to(device="cuda", non_blocking=True)
-        attention_mask = attention_mask.to(device="cuda", non_blocking=True)
-        image_tensors = image_tensors.to(device="cuda", dtype=torch.float16, non_blocking=True)
+        input_ids = input_ids.to(device="cuda", non_blocking=True, dtype=torch.bfloat16)
+        attention_mask = attention_mask.to(device="cuda", non_blocking=True, dtype=torch.bfloat16)
+        image_tensors = image_tensors.to(device="cuda", dtype=torch.bfloat16, non_blocking=True)
 
         # with torch.inference_mode():
         #     output_ids = model.generate(
