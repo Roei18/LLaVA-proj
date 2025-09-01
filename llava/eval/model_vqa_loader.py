@@ -382,32 +382,38 @@ def eval_model(args):
         attention_mask = attention_mask.to(device="cuda", non_blocking=True)
         image_tensors = image_tensors.to(device="cuda", dtype=torch.float16, non_blocking=True)
 
+        # with torch.inference_mode():
+        #     output_ids = model.generate(
+        #         inputs=input_ids,
+        #         # attention_mask=attention_mask,              # <- now provided
+        #         images=image_tensors,
+        #         image_sizes=image_sizes,
+        #         do_sample=(args.temperature > 0),
+        #         temperature=args.temperature,
+        #         top_p=args.top_p,
+        #         num_beams=args.num_beams,
+        #         max_new_tokens=args.max_new_tokens,
+        #         use_cache=True,
+        #         pad_token_id=tokenizer.pad_token_id 
+        #     )
+
         with torch.inference_mode():
-            output_ids = model.generate(
-                inputs=input_ids,
-                # attention_mask=attention_mask,              # <- now provided
+            outputs = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
                 images=image_tensors,
                 image_sizes=image_sizes,
-                do_sample=(args.temperature > 0),
-                temperature=args.temperature,
-                top_p=args.top_p,
-                num_beams=args.num_beams,
-                max_new_tokens=args.max_new_tokens,
                 use_cache=True,
-                pad_token_id=tokenizer.pad_token_id 
             )
-            logits = output_ids.logits  # [batch, seq_len, vocab_size]
 
-            # Inspect the last step
-            last_logits = logits[0, -1]
-            topk = torch.topk(last_logits, k=10)
-            for idx, score in zip(topk.indices.tolist(), topk.values.tolist()):
-                print(tokenizer.decode([idx]), idx, score)
+        logits = outputs.logits  # shape: [batch, seq_len, vocab_size]
 
-        print(f'output ids: {output_ids}')
-        decoded = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
-        decoded = [s.strip() for s in decoded]
-
+        # Example: check top 10 tokens at the last step
+        last_logits = logits[0, -1]
+        topk = torch.topk(last_logits, k=10)
+        for idx, score in zip(topk.indices.tolist(), topk.values.tolist()):
+            print(tokenizer.decode([idx]), idx, score)
+            
         # write one line per item in the batch
         for i in range(batch_size):
             idx = batch_questions[i]["question_id"]
