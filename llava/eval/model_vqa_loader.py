@@ -372,6 +372,7 @@ def eval_model(args):
 
     data_loader = create_data_loader(questions, args.image_folder, tokenizer, image_processor, model.config, batch_size=2, image_aspect_ratio=args.image_aspect_ratio)
     q_ptr = 0
+    model.to(torch.bfloat16).cuda().eval()
     for (input_ids, attention_mask, image_tensors, image_sizes) in tqdm(data_loader, total=len(data_loader)):
         batch_size = input_ids.size(0)
         batch_questions = questions[q_ptr : q_ptr + batch_size]
@@ -413,7 +414,7 @@ def eval_model(args):
         topk = torch.topk(last_logits, k=10)
         for idx, score in zip(topk.indices.tolist(), topk.values.tolist()):
             print(tokenizer.decode([idx]), idx, score)
-            
+
         # write one line per item in the batch
         for i in range(batch_size):
             idx = batch_questions[i]["question_id"]
