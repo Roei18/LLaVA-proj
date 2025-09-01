@@ -121,6 +121,8 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
             incompat = model.load_state_dict(non_lora_trainables, strict=False)
             print(f"Missing keys: {len(incompat.missing_keys)}")
             print(f"Unexpected keys: {len(incompat.unexpected_keys)}")
+            for key in incompat.missing_keys:
+                print(" -", key)
 
         elif model_base is not None:
             # this may be mm projector only
