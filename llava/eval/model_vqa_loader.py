@@ -396,6 +396,13 @@ def eval_model(args):
                 use_cache=True,
                 pad_token_id=tokenizer.pad_token_id 
             )
+            logits = output_ids.logits  # [batch, seq_len, vocab_size]
+
+            # Inspect the last step
+            last_logits = logits[0, -1]
+            topk = torch.topk(last_logits, k=10)
+            for idx, score in zip(topk.indices.tolist(), topk.values.tolist()):
+                print(tokenizer.decode([idx]), idx, score)
 
         print(f'output ids: {output_ids}')
         decoded = tokenizer.batch_decode(output_ids, skip_special_tokens=True)
